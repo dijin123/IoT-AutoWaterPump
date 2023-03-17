@@ -8,7 +8,7 @@ Auto On/Off Water Pump based on Water Level in the Tank
 * Tinxy 16Amp Switch Module [Amzon Purchase Link](https://amzn.eu/d/gcDJs8O)
 
 ## FlowChart
-<img src="https://github.com/dijin123/IoT-AutoWaterPump/blob/main/Flow%20Diagram.drawio.svg" width="60%">
+<img src="https://github.com/dijin123/IoT-AutoWaterPump/blob/main/Flow%20Diagram.jpg" width="60%">
 
 ## Circuit Diagram
 <img src="https://github.com/dijin123/IoT-AutoWaterPump/blob/main/UltrasonicAutoPump.jpg" width="80%">
