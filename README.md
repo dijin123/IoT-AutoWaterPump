@@ -11,6 +11,6 @@ Auto On/Off Water Pump based on Water Level in the Tank
 <img src="https://github.com/dijin123/IoT-AutoWaterPump/blob/main/Flow%20Diagram.drawio.svg" width="60%">
 
 ## Circuit Diagram
-<img src="https://github.com/dijin123/IoT-AutoWaterPump/blob/main/UltrasonicAutoPump_bb.png" width="80%">
+<img src="https://github.com/dijin123/IoT-AutoWaterPump/blob/main/UltrasonicAutoPump.jpg" width="80%">
 
 
