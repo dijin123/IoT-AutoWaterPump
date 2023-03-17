@@ -1,5 +1,3 @@
-#include <ESP8266WebServer.h>
-
 #include <WiFiManager.h>
 #include <strings_en.h>
 #include <wm_consts_en.h>
