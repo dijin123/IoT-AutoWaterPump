@@ -1,11 +1,6 @@
+#include <ESP8266WebServer.h>
 #include <WiFiManager.h>
-#include <strings_en.h>
-#include <wm_consts_en.h>
-#include <wm_strings_en.h>
-#include <wm_strings_es.h>
-
 #include <ArduinoJson.h>
-#include <ArduinoJson.hpp>
 
 const int trigPin = 12;
 const int echoPin = 14;
