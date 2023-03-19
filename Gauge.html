@@ -2,48 +2,172 @@
 <html>
 <head>
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.3/jquery.min.js"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+<link rel="stylesheet" href="https://code.getmdl.io/1.3.0/material.indigo-pink.min.css">
+<script defer src="https://code.getmdl.io/1.3.0/material.min.js"></script>
 <script>
 $( document ).ready(function() {
         const gaugeElement = document.querySelector(".gauge");
         console.log( "document loaded" );
-        setGaugeValue(gaugeElement, 0.0);
+        $.ajax({ 
+                      type: "GET",
+                      url: "/getdata",
+                      success: function(data){ 
+                        $('input[name="txtwaterLower"]')[0].parentElement.MaterialTextfield.change(data.tankLower);
+                        $('input[name="txtwaterUpper"]')[0].parentElement.MaterialTextfield.change(data.tankUpper);
+                        $('input[name="txtTinxyKey"]')[0].parentElement.MaterialTextfield.change(data.tinxyKey);
+                        $('input[name="txtTankHeight"]')[0].parentElement.MaterialTextfield.change(data.tankheight);
+                        if(data.motorSatus == 0) {
+                              var myCheckbox = document.getElementById('switch-1');
+                              myCheckbox.parentElement.MaterialSwitch.off();
+                              $('.mdl-switch input[type="checkbox"]').next().text("Motor Off");
+                          }
+                          else {
+                            var myCheckbox = document.getElementById('switch-1');
+                              myCheckbox.parentElement.MaterialSwitch.on();
+                              $('.mdl-switch input[type="checkbox"]').next().text("Motor On");
+                          }
+                      }
+            });
+
+            $('.mdl-switch input[type="checkbox"]').change(function(){
+                var status = 0;
+                if($(this).is(':checked')){
+                    $(this).next().text("Motor On");
+                    status = 1;
+                }
+                else
+                {
+                    $(this).next().text("Motor Off");
+                    status = 0;
+                }
+                $.ajax(
+                {
+                  type: "GET",
+                  url: '/toggle?',
+                  data: "motorsatus=" + status,
+                  success: function(result)
+                  {
+                      $("#result").html(result);
+                  }
+                });
+            });
+          // Gauge Display 
         setInterval(function()
-{           $.ajax({ 
-                type: "GET",
-                crossDomain: true,
-                url: "/level",
-                success: function(data){  
-                    console.log(data);      
-                    setGaugeValue(gaugeElement, (data/100));
+                {
+                  $.ajax({ 
+                      type: "GET",
+                      crossDomain: true,
+                      url: "/level",
+                      success: function(data){  
+                          console.log(data);
+                          var value = (data/100);
+                          if (value < 0 || value > 1) {
+                            return;
+                          }
+                          gaugeElement.querySelector(".gauge__fill").style.transform = `rotate(${
+                            value / 2
+                          }turn)`;
+                          gaugeElement.querySelector(".gauge__cover").textContent = `${Math.round(
+                            value * 100
+                          )}%`;
                 }
             });
         }, 1000);//time in milliseconds
+
+        $("#btnSave").click(function()
+        {
+            var waterLower = $('input[name="txtwaterLower"]').val();
+            var waterUpper = $('input[name="txtwaterUpper"]').val();
+            var tinxyKey = $('input[name="txtTinxyKey"]').val();
+            var TankHeight = $('input[name="txtTankHeight"]').val();
+            console.log("post value: lower: " + waterLower +" upper : " + waterUpper +" TankHeight :" +TankHeight);  
+            $.ajax(
+            {
+                type: "GET",
+                url: '/configRange?',
+                data: "lower=" + waterLower + "&upper=" + waterUpper + "&Height=" + TankHeight + "&key="+tinxyKey,
+                success: function(result)
+                {
+                    $("#result").html(result);
+                }
+            });
+            alert("Data Saved Successfuly!!!")
+        });
     });
- 
-function setGaugeValue(gauge, value) {
-  if (value < 0 || value > 1) {
-    return;
-  }
-  gauge.querySelector(".gauge__fill").style.transform = `rotate(${
-    value / 2
-  }turn)`;
-  gauge.querySelector(".gauge__cover").textContent = `${Math.round(
-    value * 100
-  )}%`;
-}
 </script>
 <style>
-.gauge {width: 100%;max-width: 250px;font-family: "Roboto", sans-serif;font-size: 32px;color: #004033;}.gauge__body {width: 100%;height: 0;padding-bottom: 50%;background: #b4c0be;position: relative;border-top-left-radius: 100% 200%;border-top-right-radius: 100% 200%;overflow: hidden;}.gauge__fill {position: absolute;top: 100%;left: 0;width: inherit;height: 100%;background: #009578;transform-origin: center top;transform: rotate(0.25turn);transition: transform 0.2s ease-out;}.gauge__cover {width: 75%;height: 150%;background: #ffffff;border-radius: 50%;position: absolute;top: 25%;left: 50%;transform: translateX(-50%);display: flex;align-items: center;justify-content: center;padding-bottom: 25%;box-sizing: border-box;}
+.gauge {width: 100%;max-width: 250px;font-family: "Roboto", sans-serif;font-size: 32px;color: #004033;}
+.gauge__body {width: 100%;height: 0;padding-bottom: 50%;background: #b4c0be;position: relative;border-top-left-radius: 100% 200%;border-top-right-radius: 100% 200%;overflow: hidden;}
+.gauge__fill {position: absolute;top: 100%;left: 0;width: inherit;height: 100%;background: #009578;transform-origin: center top;transform: rotate(0.25turn);transition: transform 0.2s ease-out;}
+.gauge__cover {width: 75%;height: 150%;background: #ffffff;border-radius: 50%;position: absolute;top: 25%;left: 50%;transform: translateX(-50%);display: flex;align-items: center;justify-content: center;padding-bottom: 25%;box-sizing: border-box;}
 </style>
 </head>
 <body>
 
-<div class="gauge">
-    <div class="gauge__body">
-      <div class="gauge__fill"></div>
-      <div class="gauge__cover"></div>
+<br>
+<table>
+  <tr>
+    <td colspan="2" >
+      <label class="mdl-switch mdl-js-switch mdl-js-ripple-effect" for="switch-1">
+        <input type="checkbox" id="switch-1" class="mdl-switch__input">
+        <span class="mdl-switch__label">Motor Off</span>
+      </label>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center">
+      <label class = "mdl-layout-title" >Water Level </label>
+      <br>
+      <div class="gauge">
+        <div class="gauge__body">
+          <div class="gauge__fill"></div>
+          <div class="gauge__cover"></div>
+        </div>
     </div>
-  </div>
-
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2"><span class="mdl-layout-title">Settings :</span></td>
+  </tr>
+  <tr>
+     <td> 
+           <div class = "mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+              <input class = "mdl-textfield__input" type = "text" pattern = "-?[0-9]*(\.[0-9]+)?" name= "txtwaterLower">
+              <label class = "mdl-textfield__label" for = "txtwaterLower">Water Level Lower : </label>
+              <span class = "mdl-textfield__error">Number required!</span>
+           </div>
+     </td>
+     
+     <td>
+           <div class = "mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+              <input class = "mdl-textfield__input" type = "text" pattern = "-?[0-9]*(\.[0-9]+)?" name= "txtwaterUpper">
+              <label class = "mdl-textfield__label" for = "txtwaterUpper"> Water Level Upper : </label>
+              <span class = "mdl-textfield__error">Number required!</span>
+           </div>
+     </td>
+    
+  </tr>
+  <tr>
+    <td>
+      <div class = "mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+        <input class = "mdl-textfield__input" type = "text" name= "txtTankHeight">
+        <label class = "mdl-textfield__label" for = "txtTankHeight"> Water Tank Height : </label>
+     </div>
+    </td>
+    <td>
+      <div class = "mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+        <input class = "mdl-textfield__input" type = "text" name= "txtTinxyKey">
+        <label class = "mdl-textfield__label" for = "txtTinxyKey"> Tinxy API Key : </label>
+     </div>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" align="right">
+      <button id="btnSave" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-button--accent">
+      Save
+    </button></td>
+  </tr>
+</table>   
 </body>
 </html>

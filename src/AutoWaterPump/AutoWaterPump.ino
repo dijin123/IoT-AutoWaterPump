@@ -1,3 +1,5 @@
+#include <ArduinoJson.h>
+
 #include <ESP8266WiFi.h>
 #include <BlynkSimpleEsp8266.h>
 
@@ -5,7 +7,7 @@
 #include <EEPROM.h>
 #include <ESP8266WebServer.h>
 #include <WiFiManager.h>
-#include <ArduinoJson.h>
+
 
 const int trigPin = 12;
 const int echoPin = 14;
@@ -26,11 +28,6 @@ float distanceInch;
 
 /* Comment this out to disable prints and save space */
 #define BLYNK_PRINT Serial
-
-// Your WiFi credentials.
-// Set password to "" for open networks.
-char ssid[] = "";
-char pass[] = "";
 
 BlynkTimer timer;
 
@@ -64,66 +61,192 @@ void myTimerEvent()
 
 
 // Water level WebPage
-const char index_html[] PROGMEM={"<!DOCTYPE html>\n"
-"<html>\n"
-"<head>\n"
-"<script src=\"https://ajax.googleapis.com/ajax/libs/jquery/3.6.3/jquery.min.js\"></script>\n"
-"<script>\n"
-"$( document ).ready(function() {\n"
-"       const gaugeElement = document.querySelector(\".gauge\");\n"
-"        console.log( \"document loaded\" );\n"
-"        setGaugeValue(gaugeElement, 0.0);\n"
-"        setInterval(function()\n"
-"{           $.ajax({ \n"
-"                type: \"GET\",\n"
-"                crossDomain: true,\n"
-"                url: \"/level\",\n"
-"                success: function(data){  \n"
-"                    console.log(data);      \n"
-"                    setGaugeValue(gaugeElement, (data/100));\n"
-"                }\n"
-"            });\n"
-"        }, 1000);//time in milliseconds\n"
-"    });\n"
- 
-"function setGaugeValue(gauge, value) {\n"
-"  if (value < 0 || value > 1) {\n"
-"    return;\n"
-"  }\n"
-"  gauge.querySelector(\".gauge__fill\").style.transform = `rotate(${\n"
-"    value / 2\n"
-"  }turn)`;\n"
-"  gauge.querySelector(\".gauge__cover\").textContent = `${Math.round(\n"
-"    value * 100\n"
-"  )}%`;\n"
-"}\n"
-"</script>\n"
-"<style>\n"
-".gauge {width: 100%;max-width: 250px;font-family: \"Roboto\", sans-serif;font-size: 32px;color: #004033;} \n"
-".gauge__body {width: 100%;height: 0;padding-bottom: 50%;background: #b4c0be;position: relative;border-top-left-radius: 100% 200%;border-top-right-radius: 100% 200%;overflow: hidden;}\n"
-".gauge__fill {position: absolute;top: 100%;left: 0;width: inherit;height: 100%;background: #009578;transform-origin: center top;transform: rotate(0.25turn);transition: transform 0.2s ease-out;}\n"
-".gauge__cover {width: 75%;height: 150%;background: #ffffff;border-radius: 50%;position: absolute;top: 25%;left: 50%;transform: translateX(-50%);display: flex;align-items: center;justify-content: center;padding-bottom: 25%;box-sizing: border-box;} \n"
-"</style>\n"
-"</head>\n"
-"<body>\n"
+const char index_html[] PROGMEM = R"=====( 
+<!DOCTYPE html>
+<html>
+<head>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.3/jquery.min.js"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+<link rel="stylesheet" href="https://code.getmdl.io/1.3.0/material.indigo-pink.min.css">
+<script defer src="https://code.getmdl.io/1.3.0/material.min.js"></script>
+<script>
+$( document ).ready(function() {
+        const gaugeElement = document.querySelector(".gauge");
+        console.log( "document loaded" );
+        $.ajax({ 
+                      type: "GET",
+                      url: "/getdata",
+                      success: function(data){ 
+                        $('input[name="txtwaterLower"]')[0].parentElement.MaterialTextfield.change(data.tankLower);
+                        $('input[name="txtwaterUpper"]')[0].parentElement.MaterialTextfield.change(data.tankUpper);
+                        $('input[name="txtTinxyKey"]')[0].parentElement.MaterialTextfield.change(data.tinxyKey);
+                        $('input[name="txtTankHeight"]')[0].parentElement.MaterialTextfield.change(data.tankheight);
+                        if(data.motorSatus == 0) {
+                              var myCheckbox = document.getElementById('switch-1');
+                              myCheckbox.parentElement.MaterialSwitch.off();
+                              $('.mdl-switch input[type="checkbox"]').next().text("Motor Off");
+                          }
+                          else {
+                            var myCheckbox = document.getElementById('switch-1');
+                              myCheckbox.parentElement.MaterialSwitch.on();
+                              $('.mdl-switch input[type="checkbox"]').next().text("Motor On");
+                          }
+                      }
+            });
 
-"<div class=\"gauge\">\n"
-"    <div class=\"gauge__body\">\n"
-"      <div class=\"gauge__fill\"></div>\n"
-"      <div class=\"gauge__cover\"></div>\n"
-"    </div>\n"
-"  </div>\n"
+            $('.mdl-switch input[type="checkbox"]').change(function(){
+                var status = 0;
+                if($(this).is(':checked')){
+                    $(this).next().text("Motor On");
+                    status = 1;
+                }
+                else
+                {
+                    $(this).next().text("Motor Off");
+                    status = 0;
+                }
+                $.ajax(
+                {
+                  type: "GET",
+                  url: '/toggle?',
+                  data: "motorsatus=" + status,
+                  success: function(result)
+                  {
+                      $("#result").html(result);
+                  }
+                });
+            });
+          // Gauge Display 
+        setInterval(function()
+                {
+                  $.ajax({ 
+                      type: "GET",
+                      crossDomain: true,
+                      url: "/level",
+                      success: function(data){  
+                          console.log(data);
+                          var value = (data/100);
+                          if (value < 0 || value > 1) {
+                            return;
+                          }
+                          gaugeElement.querySelector(".gauge__fill").style.transform = `rotate(${
+                            value / 2
+                          }turn)`;
+                          gaugeElement.querySelector(".gauge__cover").textContent = `${Math.round(
+                            value * 100
+                          )}%`;
+                }
+            });
+        }, 1000);//time in milliseconds
 
-"</body>\n"
-"</html>\n"};
+        $("#btnSave").click(function()
+        {
+            var waterLower = $('input[name="txtwaterLower"]').val();
+            var waterUpper = $('input[name="txtwaterUpper"]').val();
+            var tinxyKey = $('input[name="txtTinxyKey"]').val();
+            var TankHeight = $('input[name="txtTankHeight"]').val();
+            console.log("post value: lower: " + waterLower +" upper : " + waterUpper +" TankHeight :" +TankHeight);  
+            $.ajax(
+            {
+                type: "GET",
+                url: '/configRange?',
+                data: "lower=" + waterLower + "&upper=" + waterUpper + "&Height=" + TankHeight + "&key="+tinxyKey,
+                success: function(result)
+                {
+                    $("#result").html(result);
+                }
+            });
+            alert("Data Saved Successfuly!!!")
+        });
+    });
+</script>
+<style>
+.gauge {width: 100%;max-width: 250px;font-family: "Roboto", sans-serif;font-size: 32px;color: #004033;}
+.gauge__body {width: 100%;height: 0;padding-bottom: 50%;background: #b4c0be;position: relative;border-top-left-radius: 100% 200%;border-top-right-radius: 100% 200%;overflow: hidden;}
+.gauge__fill {position: absolute;top: 100%;left: 0;width: inherit;height: 100%;background: #009578;transform-origin: center top;transform: rotate(0.25turn);transition: transform 0.2s ease-out;}
+.gauge__cover {width: 75%;height: 150%;background: #ffffff;border-radius: 50%;position: absolute;top: 25%;left: 50%;transform: translateX(-50%);display: flex;align-items: center;justify-content: center;padding-bottom: 25%;box-sizing: border-box;}
+</style>
+</head>
+<body>
 
-#define MAX_HEIGHT 27  // tank height 27 cm manually enter here for automatic empty tank
-#define MOTOR_CONTROL_PIN D4 
+<br>
+<table>
+  <tr>
+    <td colspan="2" >
+      <label class="mdl-switch mdl-js-switch mdl-js-ripple-effect" for="switch-1">
+        <input type="checkbox" id="switch-1" class="mdl-switch__input">
+        <span class="mdl-switch__label">Motor Off</span>
+      </label>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center">
+      <label class = "mdl-layout-title" >Water Level </label>
+      <br>
+      <div class="gauge">
+        <div class="gauge__body">
+          <div class="gauge__fill"></div>
+          <div class="gauge__cover"></div>
+        </div>
+    </div>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2"><span class="mdl-layout-title">Settings :</span></td>
+  </tr>
+  <tr>
+     <td> 
+           <div class = "mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+              <input class = "mdl-textfield__input" type = "text" pattern = "-?[0-9]*(\.[0-9]+)?" name= "txtwaterLower">
+              <label class = "mdl-textfield__label" for = "txtwaterLower">Water Level Lower : </label>
+              <span class = "mdl-textfield__error">Number required!</span>
+           </div>
+     </td>
+     
+     <td>
+           <div class = "mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+              <input class = "mdl-textfield__input" type = "text" pattern = "-?[0-9]*(\.[0-9]+)?" name= "txtwaterUpper">
+              <label class = "mdl-textfield__label" for = "txtwaterUpper"> Water Level Upper : </label>
+              <span class = "mdl-textfield__error">Number required!</span>
+           </div>
+     </td>
+    
+  </tr>
+  <tr>
+    <td>
+      <div class = "mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+        <input class = "mdl-textfield__input" type = "text" name= "txtTankHeight">
+        <label class = "mdl-textfield__label" for = "txtTankHeight"> Water Tank Height : </label>
+     </div>
+    </td>
+    <td>
+      <div class = "mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+        <input class = "mdl-textfield__input" type = "text" name= "txtTinxyKey">
+        <label class = "mdl-textfield__label" for = "txtTinxyKey"> Tinxy API Key : </label>
+     </div>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" align="right">
+      <button id="btnSave" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-button--accent">
+      Save
+    </button></td>
+  </tr>
+</table>   
+</body>
+</html>
+)=====";
 
-UltraSonicDistanceSensor distanceSensor(D6,D5);  //D1 trig, D2=echo
+#define MAX_HEIGHT  27  // tank height 27 cm manually enter here for automatic empty tank
+#define MOTOR_CONTROL_PIN D4
+
+//UltraSonicDistanceSensor distanceSensor(D6,D5);  //D1 trig, D2=echo
 
 int waterLevelLowerThreshold = 15;
-int waterLevelUpperThreshold = 90;
+int waterLevelUpperThreshold = 80;
+int tankHeight = 100;
+int MotorStatus = 0;
+String tinxyKey = "62568039a0011179488b852a";
 float volume = 0;
 float liters = 0;
 WiFiClient client;
@@ -150,29 +273,80 @@ void handleNotFound() {
 
 void handleStatus() {
   server.enableCORS(true);
-  if (digitalRead(MOTOR_CONTROL_PIN) == 0)  //MOTOR ON
+  if (MotorStatus == 0)  //MOTOR ON
   server.send(200, "text/plain", "on");
   else server.send(200, "text/plain", "off");
+}
+
+void handleToggle() {
+  server.enableCORS(true);
+  MotorStatus = (server.arg(0)).toInt();
+  server.send(200, "text/plain", "OK");
+}
+
+void handleGetData(){
+  server.enableCORS(true);
+  DynamicJsonDocument doc(512);
+  doc["tankheight"] = tankHeight;
+  doc["tankLower"] = waterLevelLowerThreshold;
+  doc["tankUpper"] = waterLevelUpperThreshold;
+  doc["motorSatus"] = MotorStatus;
+  doc["tinxyKey"] = tinxyKey;
+  String buf;
+  serializeJson(doc, buf);
+  server.send(200, "application/json", buf);
 }
 
 void handleRangeSetting() {
   waterLevelLowerThreshold = (server.arg(0)).toInt();
   waterLevelUpperThreshold = (server.arg(1)).toInt();
+  tankHeight = (server.arg(2)).toInt();
+  //BLYNK_AUTH_TOKEN = (server.arg(3));
+  tinxyKey = (server.arg(3));
   Serial.print(waterLevelLowerThreshold);
   Serial.print(":");
-  Serial.println(waterLevelUpperThreshold);
+  Serial.print(waterLevelUpperThreshold);
+  Serial.print(":");
+  Serial.print(MAX_HEIGHT);
+  Serial.print(":");
+  Serial.print(BLYNK_AUTH_TOKEN);
+  Serial.print(":");
+  Serial.println(tinxyKey);
   server.enableCORS(true);
-  server.send(200, "text/plain", "");
+  server.send(200, "text/plain", "OK");
 }
 
 
 void measure_Volume()
 {
-  float heightInch = 1 * distanceSensor.measureDistanceCm();
-  //float heightInch = 1 * distanceCm; 
-  Serial.print("Height in Inch HTML : ");
-  Serial.println(heightInch);
-  volume = (MAX_HEIGHT - heightInch) / 28;  //MAX_HEIGHT-distance will give actual height, 1 cm for   // offset adjustment
+      // Ultrsonic Sensor Code
+      // Clears the trigPin
+      digitalWrite(trigPin, LOW);
+      delayMicroseconds(2);
+      // Sets the trigPin on HIGH state for 10 micro seconds
+      digitalWrite(trigPin, HIGH);
+      delayMicroseconds(10);
+      digitalWrite(trigPin, LOW);
+
+      // Reads the echoPin, returns the sound wave travel time in microseconds
+      duration = pulseIn(echoPin, HIGH);
+
+      // Calculate the distance
+      distanceCm = duration * SOUND_VELOCITY / 2;
+
+      // Convert to inches
+      distanceInch = distanceCm * CM_TO_INCH;
+
+      // Prints the distance on the Serial Monitor
+      Serial.print("Distance (cm): ");
+      Serial.println(distanceCm);
+      //Serial.print("Distance (inch): ");
+      //Serial.println(distanceInch);
+  //float heightInch = 1 * distanceSensor.measureDistanceCm();
+  float waterHeightCM = distanceCm;
+  Serial.print("Water Height in CM : ");
+  Serial.println(waterHeightCM);
+  volume = (tankHeight - waterHeightCM) / tankHeight;  //MAX_HEIGHT-distance will give actual height, 1 cm for   // offset adjustment
   liters = volume * 100;  // for percentage
   Serial.println(liters);
   if (liters <= waterLevelLowerThreshold)
@@ -216,8 +390,8 @@ void setup() {
   //Wifi Manager Setup
   WiFiManager wifiManager;
   wifiManager.resetSettings();
-  wifiManager.autoConnect("DNA WiFi Manager");
-  Serial.println("connected :)");
+  wifiManager.autoConnect("AutoWaterPump WiFi");
+  Serial.println("Connected :)");
 
   //WebServer Setup
   Serial.print("IP address:");
@@ -225,11 +399,13 @@ void setup() {
   server.on("/", handleRoot);
   server.on("/level", handleLevelRequest);
   server.on("/configRange", handleRangeSetting);
-  server.on("/motor_status", handleStatus);
+  server.on("/motorstatus", handleStatus);
+  server.on("/getdata", handleGetData); 
+  server.on("/toggle", handleToggle);
   server.onNotFound(handleNotFound);
   server.begin();
   Serial.println("HTTP server started");
-  Serial.print("WIFI Settings : ");  
+  Serial.print("WIFI Settings : SSID - ");  
   Serial.print(WiFi.SSID().c_str()); 
   Serial.println(WiFi.psk().c_str()); 
   Blynk.begin(BLYNK_AUTH_TOKEN, WiFi.SSID().c_str(), WiFi.psk().c_str());
@@ -254,34 +430,9 @@ void loop() {
       digitalWrite(LED, LOW);
       delay(200);
 
-      // Ultrsonic Sensor Code
-      // Clears the trigPin
-      digitalWrite(trigPin, LOW);
-      delayMicroseconds(2);
-      // Sets the trigPin on HIGH state for 10 micro seconds
-      digitalWrite(trigPin, HIGH);
-      delayMicroseconds(10);
-      digitalWrite(trigPin, LOW);
-
-      // Reads the echoPin, returns the sound wave travel time in microseconds
-      duration = pulseIn(echoPin, HIGH);
-
-      // Calculate the distance
-      distanceCm = duration * SOUND_VELOCITY / 2;
-
-      // Convert to inches
-      distanceInch = distanceCm * CM_TO_INCH;
-
-      // Prints the distance on the Serial Monitor
-      //Serial.print("Distance (cm): ");
-      //Serial.println(distanceCm);
-      Serial.print("Distance (inch): ");
-      Serial.println(distanceInch);
+      
       Blynk.run();
       timer.run();
-      
-
-      delay(1000);
     }
   } else {
     digitalWrite(LED, HIGH);  // LED OFF
