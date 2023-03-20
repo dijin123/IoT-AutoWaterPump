@@ -5,7 +5,7 @@
 #include <BlynkSimpleEsp8266.h>
 #include <ESP8266WebServer.h>
 #include <WiFiManager.h>
-
+#include <EEPROM.h>
 
 const int trigPin = 12;
 const int echoPin = 14;
@@ -309,46 +309,46 @@ ESP8266WebServer server(80);
 void motorOn() {
   //If we used the Tinxy Relay Module
   //if (tinxyKey != NULL && tinxyAPIKey != NULL) {
-    Serial.println("MotorON event");
-    WiFiClientSecure client;
-    client.setInsecure();
-    HTTPClient http;
-    String serverPath = "https://backend.tinxy.in/v2/devices/" + tinxyKey + "/toggle";
-    // Your Domain name with URL path or IP address with path
-    client.connect("backend.tinxy.in", 443);
-    http.begin(client, serverPath);
-    http.addHeader("Content-Type", "application/json");
-    http.addHeader("Authorization", tinxyAPIKey);
-    int httpResponseCode = http.POST("{\"request\":{\"state\":1},\"deviceNumber\":1}");
-    Serial.print("HTTP Response code: ");
-    Serial.println(httpResponseCode);
-    if (httpResponseCode == 200)
-      MotorStatus = 1;
-    // Free resources
-    http.end();
+  Serial.println("MotorON event");
+  WiFiClientSecure client;
+  client.setInsecure();
+  HTTPClient http;
+  String serverPath = "https://backend.tinxy.in/v2/devices/" + tinxyKey + "/toggle";
+  // Your Domain name with URL path or IP address with path
+  client.connect("backend.tinxy.in", 443);
+  http.begin(client, serverPath);
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("Authorization", tinxyAPIKey);
+  int httpResponseCode = http.POST("{\"request\":{\"state\":1},\"deviceNumber\":1}");
+  Serial.print("HTTP Response code: ");
+  Serial.println(httpResponseCode);
+  if (httpResponseCode == 200)
+    MotorStatus = 1;
+  // Free resources
+  http.end();
   //}
 }
 
 void motorOff() {
   //If we used the Tinxy Relay Module
   //if (tinxyKey != NULL && tinxyAPIKey != NULL) {
-    Serial.println("MotorOFF event");
-    WiFiClientSecure client;
-    client.setInsecure();
-    HTTPClient http;
-    String serverPath = "https://backend.tinxy.in/v2/devices/" + tinxyKey + "/toggle";
-    // Your Domain name with URL path or IP address with path
-    client.connect("backend.tinxy.in", 443);
-    http.begin(client, serverPath);
-    http.addHeader("Content-Type", "application/json");
-    http.addHeader("Authorization", tinxyAPIKey);
-    int httpResponseCode = http.POST("{\"request\":{\"state\":0},\"deviceNumber\":1}");
-    Serial.print("HTTP Response code: ");
-    Serial.println(httpResponseCode);
-    if (httpResponseCode == 200)
-      MotorStatus = 0;
-    // Free resources
-    http.end();
+  Serial.println("MotorOFF event");
+  WiFiClientSecure client;
+  client.setInsecure();
+  HTTPClient http;
+  String serverPath = "https://backend.tinxy.in/v2/devices/" + tinxyKey + "/toggle";
+  // Your Domain name with URL path or IP address with path
+  client.connect("backend.tinxy.in", 443);
+  http.begin(client, serverPath);
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("Authorization", tinxyAPIKey);
+  int httpResponseCode = http.POST("{\"request\":{\"state\":0},\"deviceNumber\":1}");
+  Serial.print("HTTP Response code: ");
+  Serial.println(httpResponseCode);
+  if (httpResponseCode == 200)
+    MotorStatus = 0;
+  // Free resources
+  http.end();
   //}
 }
 // This function sends Arduino's uptime every second to Virtual Pin 2.
@@ -358,6 +358,61 @@ void myTimerEvent() {
   Blynk.virtualWrite(V1, liters);
   //Blynk.virtualWrite(V2, millis() / 1000);
 }
+
+int writeStringToEEPROM(int addrOffset, const String &strToWrite)
+{
+  byte len = strToWrite.length();
+  EEPROM.write(addrOffset, len);
+  for (int i = 0; i < len; i++)
+  {
+    EEPROM.write(addrOffset + 1 + i, strToWrite[i]);
+  }
+  return addrOffset + 1 + len;
+}
+int readStringFromEEPROM(int addrOffset, String *strToRead)
+{
+  int newStrLen = EEPROM.read(addrOffset);
+  char data[newStrLen + 1];
+  for (int i = 0; i < newStrLen; i++)
+  {
+    data[i] = EEPROM.read(addrOffset + 1 + i);
+  }
+  data[newStrLen] = '\0'; // !!! NOTE !!! Remove the space between the slash "/" and "0" (I've added a space because otherwise there is a display bug)
+  *strToRead = String(data);
+  return addrOffset + 1 + newStrLen;
+}
+
+void saveEEPROM() {
+  Serial.println("EEPROM Saving values");
+  EEPROM.write(0, 1);
+  EEPROM.write(5, tankHeight);
+  EEPROM.write(10, waterLevelLowerThreshold);
+  EEPROM.write(15, waterLevelUpperThreshold);
+  EEPROM.write(20, MotorStatus);
+  int addr1 = writeStringToEEPROM(50, tinxyKey);
+  int addr2 = writeStringToEEPROM(addr1, tinxyAPIKey);
+  EEPROM.commit();
+}
+
+void readEEPROM() {
+  Serial.println("EEPROM Get values");
+  tankHeight = EEPROM.read(5);
+  waterLevelLowerThreshold = EEPROM.read(10);
+  waterLevelUpperThreshold = EEPROM.read(15);
+  MotorStatus = EEPROM.read(20);
+  int addr1 = readStringFromEEPROM(50, &tinxyKey);
+  int addr2 = readStringFromEEPROM(addr1, &tinxyAPIKey);
+}
+
+int checkValueinEEPROM(){
+  int check = 0;
+  Serial.println("EEPROM check values");
+  check = EEPROM.read(0);
+  Serial.print("Check Value - ");
+  Serial.println(check);
+  return  check;
+}
+
 
 void handleRoot() {
   server.send_P(200, "text/html;charset=UTF-8", index_html);
@@ -408,20 +463,14 @@ void handleGetData() {
 }
 
 void handleRangeSetting() {
+  Serial.println("Save Data API");
   waterLevelLowerThreshold = (server.arg(0)).toInt();
   waterLevelUpperThreshold = (server.arg(1)).toInt();
   tankHeight = (server.arg(2)).toInt();
-  //BLYNK_AUTH_TOKEN = (server.arg(3));
   tinxyKey = (server.arg(3));
   tinxyAPIKey = (server.arg(4));
-  Serial.print(waterLevelLowerThreshold);
-  Serial.print(":");
-  Serial.print(waterLevelUpperThreshold);
-  Serial.print(":");
-  Serial.print(BLYNK_AUTH_TOKEN);
-  Serial.print(":");
-  Serial.println(tinxyKey);
   server.enableCORS(true);
+  saveEEPROM();
   server.send(200, "text/plain", "OK");
 }
 
@@ -443,15 +492,15 @@ void measure_Volume() {
   // Convert to inches
   distanceInch = distanceCm * CM_TO_INCH;
   // Prints the distance on the Serial Monitor
-  Serial.print("Distance (cm): ");
-  Serial.println(distanceCm);
+  //Serial.print("Distance (cm): ");
+  //Serial.println(distanceCm);
 
   float waterHeightCM = distanceCm;
-  Serial.print("Water Height in Tank CM : ");
-  Serial.println(waterHeightCM);
+  //Serial.print("Water Height in Tank CM : ");
+  //Serial.println(waterHeightCM);
   volume = (tankHeight - waterHeightCM) / tankHeight;
   liters = volume * 100;  // for percentage
-  Serial.println(liters);
+  //Serial.println(liters);
 
   if (liters <= waterLevelLowerThreshold)
     waterLevelDownCount++;
@@ -484,7 +533,6 @@ void runPeriodicFunc() {
   }
 }
 
-
 void setup() {
   Serial.begin(9600);        // Starts the serial communication
   pinMode(trigPin, OUTPUT);  // Sets the trigPin as an Output
@@ -495,12 +543,13 @@ void setup() {
 
   //Wifi Manager Setup
   WiFiManager wifiManager;
-  wifiManager.resetSettings();
-  wifiManager.autoConnect("AutoWaterPump WiFi");
-  Serial.println("Connected :)");
+  //clear the value in EEPROM for already save SSID and Password
+  //wifiManager.resetSettings();
+  wifiManager.autoConnect("AutoWaterPump Wifi");
+  Serial.println("Wifi Connected");
 
   //WebServer Setup
-  Serial.print("IP Address:");
+  Serial.print("Local IP Address:");
   Serial.println(WiFi.localIP());
   server.on("/", handleRoot);
   server.on("/level", handleLevelRequest);
@@ -513,19 +562,28 @@ void setup() {
   Serial.println("HTTP server started");
   Serial.print("WIFI Settings : SSID - ");
   Serial.print(WiFi.SSID().c_str());
+  Serial.print(" PWD - ");
   Serial.println(WiFi.psk().c_str());
   //Blynk Setup
   Blynk.begin(BLYNK_AUTH_TOKEN, WiFi.SSID().c_str(), WiFi.psk().c_str());
-  Serial.println("Blynk started...");
+  Serial.println("Blynk started");
   // Setup a Blynk function to be called every second
   timer.setInterval(1000L, myTimerEvent);
+
+  //EEPROM Setup
+  EEPROM.begin(512);
+  int vcheck = checkValueinEEPROM();
+  if(vcheck != 1)
+    saveEEPROM();
+  else
+    readEEPROM();
 }
+
 
 void loop() {
   if (WiFi.status() == WL_CONNECTED) {
-    digitalWrite(LED, LOW);  // LED ON
+    digitalWrite(LED, LOW);  // LED ON    
     while (WiFi.status() == WL_CONNECTED) {
-      //WebServer Start
       runPeriodicFunc();
       server.handleClient();
       //LED Function
@@ -533,7 +591,7 @@ void loop() {
       delay(500);
       digitalWrite(LED, LOW);
       delay(200);
-      //Blynk Sync 
+      //Blynk Sync
       Blynk.run();
       timer.run();
     }
