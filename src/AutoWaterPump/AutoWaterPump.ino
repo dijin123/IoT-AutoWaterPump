@@ -6,6 +6,7 @@
 #include <ESP8266WebServer.h>
 #include <WiFiManager.h>
 #include <EEPROM.h>
+#include <Espalexa.h>
 
 const int trigPin = 12;
 const int echoPin = 14;
@@ -103,32 +104,21 @@ const char index_html[] PROGMEM = R"=====(
             }
           });
       });
-      // Gauge Display 
+      // Gauge Display every 3 mints 
       setInterval(function () {
         $.ajax({
           type: "GET",
-          crossDomain: true,
           url: "/level",
           success: function (data) {
-            console.log(data);
-            var value = (data / 100);
+            console.log(data.level);
+            console.log(data.motorstatus);
+            var value = (data.level / 100);
             if (value < 0 || value > 1) {
               return;
             }
-            gaugeElement.querySelector(".gauge__fill").style.transform = `rotate(${value / 2
-              }turn)`;
-            gaugeElement.querySelector(".gauge__cover").textContent = `${Math.round(
-              value * 100
-            )}%`;
-          }
-        });
-        // Check motor status from the IoT 
-        $.ajax(
-          {
-            type: "GET",
-            url: '/motorstatus',
-            success: function (result) {
-              if (result == "on") {
+            gaugeElement.querySelector(".gauge__fill").style.transform = `rotate(${value / 2}turn)`;
+            gaugeElement.querySelector(".gauge__cover").textContent = `${Math.round(value * 100)}%`;
+            if (data.motorstatus == 1) {
                 var myCheckbox = document.getElementById('switch-1');
                 myCheckbox.parentElement.MaterialSwitch.on();
                 $('.mdl-switch input[type="checkbox"]').next().text("Motor On");
@@ -138,9 +128,9 @@ const char index_html[] PROGMEM = R"=====(
                 myCheckbox.parentElement.MaterialSwitch.off();
                 $('.mdl-switch input[type="checkbox"]').next().text("Motor Off");
               }
-            }
-          });
-      }, 1000);//time in milliseconds
+          }
+        });
+      }, 3000);//time in 3 milliseconds
 
       // Save the in data to IoT 
       $("#btnSave").click(function () {
@@ -215,7 +205,7 @@ const char index_html[] PROGMEM = R"=====(
 
 <body>
   <br>
-  <table>
+  <table style="margin-left:auto;margin-right:auto; margin-top:10px">
     <tr>
       <td colspan="2">
         <label class="mdl-switch mdl-js-switch mdl-js-ripple-effect" for="switch-1">
@@ -225,7 +215,7 @@ const char index_html[] PROGMEM = R"=====(
       </td>
     </tr>
     <tr>
-      <td colspan="2" align="center">
+      <td colspan="2" align="center" style="padding-bottom:30px">
         <label class="mdl-layout-title">Water Level </label>
         <br>
         <div class="gauge">
@@ -272,7 +262,7 @@ const char index_html[] PROGMEM = R"=====(
       </td>
     </tr>
     <tr>
-      <td>
+      <td colspan="2">
         <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
           <input class="mdl-textfield__input" type="text" name="txtTinxyAPIKey">
           <label class="mdl-textfield__label" for="txtTinxyAPIKey"> Tinxy API Key : </label>
@@ -306,6 +296,13 @@ String dataToSend = "";
 int waterLevelDownCount = 0, waterLevelUpCount = 0;
 ESP8266WebServer server(80);
 
+void setCrossOrigin() {
+  server.sendHeader(F("Access-Control-Allow-Origin"), F("*"));
+  server.sendHeader(F("Access-Control-Max-Age"), F("600"));
+  server.sendHeader(F("Access-Control-Allow-Methods"), F("PUT,POST,GET,OPTIONS"));
+  server.sendHeader(F("Access-Control-Allow-Headers"), F("*"));
+};
+
 void motorOn() {
   //If we used the Tinxy Relay Module
   //if (tinxyKey != NULL && tinxyAPIKey != NULL) {
@@ -315,15 +312,18 @@ void motorOn() {
   HTTPClient http;
   String serverPath = "https://backend.tinxy.in/v2/devices/" + tinxyKey + "/toggle";
   // Your Domain name with URL path or IP address with path
-  client.connect("backend.tinxy.in", 443);
+  //client.connect("backend.tinxy.in", 443);
   http.begin(client, serverPath);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("Authorization", tinxyAPIKey);
   int httpResponseCode = http.POST("{\"request\":{\"state\":1},\"deviceNumber\":1}");
   Serial.print("HTTP Response code: ");
   Serial.println(httpResponseCode);
-  if (httpResponseCode == 200)
+  if (httpResponseCode == 200) {
     MotorStatus = 1;
+  } else {
+    MotorStatus = 0;
+  }
   // Free resources
   http.end();
   //}
@@ -338,15 +338,18 @@ void motorOff() {
   HTTPClient http;
   String serverPath = "https://backend.tinxy.in/v2/devices/" + tinxyKey + "/toggle";
   // Your Domain name with URL path or IP address with path
-  client.connect("backend.tinxy.in", 443);
+  //client.connect("backend.tinxy.in", 443);
   http.begin(client, serverPath);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("Authorization", tinxyAPIKey);
   int httpResponseCode = http.POST("{\"request\":{\"state\":0},\"deviceNumber\":1}");
   Serial.print("HTTP Response code: ");
   Serial.println(httpResponseCode);
-  if (httpResponseCode == 200)
+  if (httpResponseCode == 200) {
     MotorStatus = 0;
+  } else {
+    MotorStatus = 1;
+  }
   // Free resources
   http.end();
   //}
@@ -359,25 +362,21 @@ void myTimerEvent() {
   //Blynk.virtualWrite(V2, millis() / 1000);
 }
 
-int writeStringToEEPROM(int addrOffset, const String &strToWrite)
-{
+int writeStringToEEPROM(int addrOffset, const String &strToWrite) {
   byte len = strToWrite.length();
   EEPROM.write(addrOffset, len);
-  for (int i = 0; i < len; i++)
-  {
+  for (int i = 0; i < len; i++) {
     EEPROM.write(addrOffset + 1 + i, strToWrite[i]);
   }
   return addrOffset + 1 + len;
 }
-int readStringFromEEPROM(int addrOffset, String *strToRead)
-{
+int readStringFromEEPROM(int addrOffset, String *strToRead) {
   int newStrLen = EEPROM.read(addrOffset);
   char data[newStrLen + 1];
-  for (int i = 0; i < newStrLen; i++)
-  {
+  for (int i = 0; i < newStrLen; i++) {
     data[i] = EEPROM.read(addrOffset + 1 + i);
   }
-  data[newStrLen] = '\0'; // !!! NOTE !!! Remove the space between the slash "/" and "0" (I've added a space because otherwise there is a display bug)
+  data[newStrLen] = '\0';  // !!! NOTE !!! Remove the space between the slash "/" and "0" (I've added a space because otherwise there is a display bug)
   *strToRead = String(data);
   return addrOffset + 1 + newStrLen;
 }
@@ -388,7 +387,7 @@ void saveEEPROM() {
   EEPROM.write(5, tankHeight);
   EEPROM.write(10, waterLevelLowerThreshold);
   EEPROM.write(15, waterLevelUpperThreshold);
-  EEPROM.write(20, MotorStatus);
+  //EEPROM.write(20, MotorStatus);
   int addr1 = writeStringToEEPROM(50, tinxyKey);
   int addr2 = writeStringToEEPROM(addr1, tinxyAPIKey);
   EEPROM.commit();
@@ -399,57 +398,61 @@ void readEEPROM() {
   tankHeight = EEPROM.read(5);
   waterLevelLowerThreshold = EEPROM.read(10);
   waterLevelUpperThreshold = EEPROM.read(15);
-  MotorStatus = EEPROM.read(20);
+  //MotorStatus = EEPROM.read(20);
   int addr1 = readStringFromEEPROM(50, &tinxyKey);
   int addr2 = readStringFromEEPROM(addr1, &tinxyAPIKey);
 }
 
-int checkValueinEEPROM(){
+int checkValueinEEPROM() {
   int check = 0;
   Serial.println("EEPROM check values");
   check = EEPROM.read(0);
   Serial.print("Check Value - ");
   Serial.println(check);
-  return  check;
+  return check;
 }
 
 
 void handleRoot() {
+  setCrossOrigin();
   server.send_P(200, "text/html;charset=UTF-8", index_html);
 }
 
 
 void handleLevelRequest() {
-  server.enableCORS(true);
-  server.send(200, "text", String(liters));
+  setCrossOrigin();
+  DynamicJsonDocument doc(512);
+  doc["level"] = String(liters);
+  doc["motorstatus"] = MotorStatus;
+  String buf;
+  serializeJson(doc, buf);
+  server.send(200, "application/json", buf);
 }
 
 
 void handleNotFound() {
+  setCrossOrigin();
   String message = "File Not Found\n\n";
   server.send(404, "text/plain", message);
 }
 
-void handleStatus() {
-  server.enableCORS(true);
-  if (MotorStatus == 0)  //MOTOR ON
-    server.send(200, "text/plain", "off");
-  else server.send(200, "text/plain", "on");
-}
-
 void handleToggle() {
-  server.enableCORS(true);
-  MotorStatus = (server.arg(0)).toInt();
-  if (MotorStatus == 1) {
-    motorOn();
+  setCrossOrigin();
+  int mStatus = (server.arg(0)).toInt();
+  if (mStatus == 1) {
+    if (liters < waterLevelUpperThreshold) {
+      motorOn();
+      MotorStatus = 1;
+    }
   } else {
     motorOff();
+    MotorStatus = 0;
   }
   server.send(200, "text/plain", "OK");
 }
 
 void handleGetData() {
-  server.enableCORS(true);
+  setCrossOrigin();
   DynamicJsonDocument doc(512);
   doc["tankheight"] = tankHeight;
   doc["tankLower"] = waterLevelLowerThreshold;
@@ -463,13 +466,13 @@ void handleGetData() {
 }
 
 void handleRangeSetting() {
+  setCrossOrigin();
   Serial.println("Save Data API");
   waterLevelLowerThreshold = (server.arg(0)).toInt();
   waterLevelUpperThreshold = (server.arg(1)).toInt();
   tankHeight = (server.arg(2)).toInt();
   tinxyKey = (server.arg(3));
   tinxyAPIKey = (server.arg(4));
-  server.enableCORS(true);
   saveEEPROM();
   server.send(200, "text/plain", "OK");
 }
@@ -488,20 +491,22 @@ void measure_Volume() {
   // Reads the echoPin, returns the sound wave travel time in microseconds
   duration = pulseIn(echoPin, HIGH);
   // Calculate the distance
-  distanceCm = duration * SOUND_VELOCITY / 2;
-  // Convert to inches
-  distanceInch = distanceCm * CM_TO_INCH;
-  // Prints the distance on the Serial Monitor
-  //Serial.print("Distance (cm): ");
-  //Serial.println(distanceCm);
-
-  float waterHeightCM = distanceCm;
-  //Serial.print("Water Height in Tank CM : ");
-  //Serial.println(waterHeightCM);
-  volume = (tankHeight - waterHeightCM) / tankHeight;
-  liters = volume * 100;  // for percentage
-  //Serial.println(liters);
-
+  float tempdistanceCm = duration * SOUND_VELOCITY / 2;
+  float differance = tempdistanceCm - distanceCm;
+  if (differance < 5.00 || differance > -5.00) {
+    distanceCm = tempdistanceCm;
+    // Convert to inches
+    distanceInch = distanceCm * CM_TO_INCH;
+    // Prints the distance on the Serial Monitor
+    Serial.print("Distance (CM): ");
+    Serial.println(distanceCm);
+    float waterHeightCM = distanceCm;
+    //Serial.print("Water Height in Tank CM : ");
+    //Serial.println(waterHeightCM);
+    volume = (tankHeight - waterHeightCM) / tankHeight;
+    liters = volume * 100;  // for percentage
+    //Serial.println(liters);
+  }
   if (liters <= waterLevelLowerThreshold)
     waterLevelDownCount++;
   else waterLevelDownCount = 0;
@@ -511,13 +516,13 @@ void measure_Volume() {
   if (waterLevelDownCount == 3) {  //TURN ON RELAY
     Serial.println("motor turned on");
     //digitalWrite(MOTOR_CONTROL_PIN, LOW);  //If we use Relay then active LOW (ON)
-    // Motor On Tinxy API HTTP Call
+    // MotorOn Tinxy API HTTP Call
     motorOn();
   }
   if (waterLevelUpCount == 3) {  //TURN OFF RELAY
     Serial.println("motor turned off");
     //digitalWrite(MOTOR_CONTROL_PIN, HIGH);  //If we use Relay then active HIGH (OFF)
-    // Motor Off Tinxy API HTTP Call
+    // MotorOff Tinxy API HTTP Call
     motorOff();
   }
 }
@@ -534,7 +539,7 @@ void runPeriodicFunc() {
 }
 
 void setup() {
-  Serial.begin(9600);        // Starts the serial communication
+  Serial.begin(115200);      // Starts the serial communication
   pinMode(trigPin, OUTPUT);  // Sets the trigPin as an Output
   pinMode(echoPin, INPUT);   // Sets the echoPin as an Input
 
@@ -551,12 +556,11 @@ void setup() {
   //WebServer Setup
   Serial.print("Local IP Address:");
   Serial.println(WiFi.localIP());
-  server.on("/", handleRoot);
-  server.on("/level", handleLevelRequest);
-  server.on("/configRange", handleRangeSetting);
-  server.on("/motorstatus", handleStatus);
-  server.on("/getdata", handleGetData);
-  server.on("/toggle", handleToggle);
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/level", HTTP_GET, handleLevelRequest);
+  server.on("/configRange", HTTP_GET, handleRangeSetting);
+  server.on("/getdata", HTTP_GET, handleGetData);
+  server.on("/toggle", HTTP_GET, handleToggle);
   server.onNotFound(handleNotFound);
   server.begin();
   Serial.println("HTTP server started");
@@ -573,7 +577,7 @@ void setup() {
   //EEPROM Setup
   EEPROM.begin(512);
   int vcheck = checkValueinEEPROM();
-  if(vcheck != 1)
+  if (vcheck != 1)
     saveEEPROM();
   else
     readEEPROM();
@@ -582,7 +586,7 @@ void setup() {
 
 void loop() {
   if (WiFi.status() == WL_CONNECTED) {
-    digitalWrite(LED, LOW);  // LED ON    
+    digitalWrite(LED, LOW);  // LED ON
     while (WiFi.status() == WL_CONNECTED) {
       runPeriodicFunc();
       server.handleClient();

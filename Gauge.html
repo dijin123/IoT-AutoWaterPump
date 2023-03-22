@@ -12,7 +12,7 @@
       //Get all data from the IoT board
       $.ajax({
         type: "GET",
-        url: "/getdata",
+        url: "http://192.168.0.197/getdata",
         success: function (data) {
           $('input[name="txtwaterLower"]')[0].parentElement.MaterialTextfield.change(data.tankLower);
           $('input[name="txtwaterUpper"]')[0].parentElement.MaterialTextfield.change(data.tankUpper);
@@ -33,7 +33,7 @@
       });
       //Handle the Motor toggle button change
       $('.mdl-switch input[type="checkbox"]').change(function () {
-        var status = 0;
+        var status;
         if ($(this).is(':checked')) {
           $(this).next().text("Motor On");
           status = 1;
@@ -46,39 +46,28 @@
         $.ajax(
           {
             type: "GET",
-            url: '/toggle?',
+            url: 'http://192.168.0.197/toggle?',
             data: "motorsatus=" + status,
             success: function (result) {
               $("#result").html(result);
             }
           });
       });
-      // Gauge Display 
+      // Gauge Display every 3 mints 
       setInterval(function () {
         $.ajax({
           type: "GET",
-          crossDomain: true,
-          url: "/level",
+          url: "http://192.168.0.197/level",
           success: function (data) {
-            console.log(data);
-            var value = (data / 100);
+            console.log(data.level);
+            console.log(data.motorstatus);
+            var value = (data.level / 100);
             if (value < 0 || value > 1) {
               return;
             }
-            gaugeElement.querySelector(".gauge__fill").style.transform = `rotate(${value / 2
-              }turn)`;
-            gaugeElement.querySelector(".gauge__cover").textContent = `${Math.round(
-              value * 100
-            )}%`;
-          }
-        });
-        // Check motor status from the IoT 
-        $.ajax(
-          {
-            type: "GET",
-            url: '/motorstatus',
-            success: function (result) {
-              if (result == "on") {
+            gaugeElement.querySelector(".gauge__fill").style.transform = `rotate(${value / 2}turn)`;
+            gaugeElement.querySelector(".gauge__cover").textContent = `${Math.round(value * 100)}%`;
+            if (data.motorstatus == 1) {
                 var myCheckbox = document.getElementById('switch-1');
                 myCheckbox.parentElement.MaterialSwitch.on();
                 $('.mdl-switch input[type="checkbox"]').next().text("Motor On");
@@ -88,9 +77,9 @@
                 myCheckbox.parentElement.MaterialSwitch.off();
                 $('.mdl-switch input[type="checkbox"]').next().text("Motor Off");
               }
-            }
-          });
-      }, 1000);//time in milliseconds
+          }
+        });
+      }, 3000);//time in 3 milliseconds
 
       // Save the in data to IoT 
       $("#btnSave").click(function () {
@@ -103,7 +92,7 @@
         $.ajax(
           {
             type: "GET",
-            url: '/configRange?',
+            url: 'http://192.168.0.197/configRange?',
             data: "lower=" + waterLower + "&upper=" + waterUpper + "&Height=" + TankHeight + "&key=" + tinxyKey + "&APIKey=" + tinxyAPIKey,
             success: function (result) {
               $("#result").html(result);
@@ -165,7 +154,7 @@
 
 <body>
   <br>
-  <table>
+  <table style="margin-left:auto;margin-right:auto; margin-top:10px">
     <tr>
       <td colspan="2">
         <label class="mdl-switch mdl-js-switch mdl-js-ripple-effect" for="switch-1">
@@ -175,7 +164,7 @@
       </td>
     </tr>
     <tr>
-      <td colspan="2" align="center">
+      <td colspan="2" align="center" style="padding-bottom:30px">
         <label class="mdl-layout-title">Water Level </label>
         <br>
         <div class="gauge">
