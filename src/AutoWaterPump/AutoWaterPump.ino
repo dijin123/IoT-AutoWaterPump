@@ -6,14 +6,14 @@
 #include <ESP8266WebServer.h>
 #include <WiFiManager.h>
 #include <EEPROM.h>
-#include <Espalexa.h>
+#include <RTClib.h>
+
 
 const int trigPin = 12;
 const int echoPin = 14;
 long duration;
 float distanceCm;
 float distanceInch;
-
 
 //define sound velocity in cm/uS
 #define SOUND_VELOCITY 0.034
@@ -53,9 +53,9 @@ const char index_html[] PROGMEM = R"=====(
 <html>
 <head>
   <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.3/jquery.min.js"></script>
+  <script src="https://storage.googleapis.com/code.getmdl.io/1.0.6/material.min.js"></script>
+  <link rel="stylesheet" href="https://storage.googleapis.com/code.getmdl.io/1.0.6/material.indigo-pink.min.css">
   <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
-  <link rel="stylesheet" href="https://code.getmdl.io/1.3.0/material.indigo-pink.min.css">
-  <script defer src="https://code.getmdl.io/1.3.0/material.min.js"></script>
   <script>
     $(document).ready(function () {
       const gaugeElement = document.querySelector(".gauge");
@@ -70,21 +70,30 @@ const char index_html[] PROGMEM = R"=====(
           $('input[name="txtTinxyKey"]')[0].parentElement.MaterialTextfield.change(data.tinxyKey);
           $('input[name="txtTankHeight"]')[0].parentElement.MaterialTextfield.change(data.tankheight);
           $('input[name="txtTinxyAPIKey"]')[0].parentElement.MaterialTextfield.change(data.tinxyAPIKey);
+          $('input[name="txtOverflow"]')[0].parentElement.MaterialTextfield.change(data.overFlow);
+          $('input[name="txtTime"]')[0].parentElement.MaterialTextfield.change(data.timervalue);
           if (data.motorSatus == 0) {
-            var myCheckbox = document.getElementById('switch-1');
-            myCheckbox.parentElement.MaterialSwitch.off();
-            $('.mdl-switch input[type="checkbox"]').next().text("Motor Off");
+            $('#switch-1')[0].parentElement.MaterialSwitch.off();
+            $('#switch-1').next().text("Motor Off");
           }
           else {
-            var myCheckbox = document.getElementById('switch-1');
-            myCheckbox.parentElement.MaterialSwitch.on();
-            $('.mdl-switch input[type="checkbox"]').next().text("Motor On");
+            $('#switch-1')[0].parentElement.MaterialSwitch.on();
+            $('#switch-1').next().text("Motor On");
+          }
+          console.log(data.timerSatus);
+          if (data.timerSatus == 0) {
+            $('#chkTimer')[0].parentElement.MaterialCheckbox.uncheck();
+            $('#chkTimer').next().text("Timer Off");
+          }
+          else {
+            $('#chkTimer')[0].parentElement.MaterialCheckbox.check();
+            $('#chkTimer').next().text("Timer On");
           }
         }
       });
       //Handle the Motor toggle button change
-      $('.mdl-switch input[type="checkbox"]').change(function () {
-        var status = 0;
+      $('#switch-1').change(function () {
+        var status;
         if ($(this).is(':checked')) {
           $(this).next().text("Motor On");
           status = 1;
@@ -104,6 +113,15 @@ const char index_html[] PROGMEM = R"=====(
             }
           });
       });
+      // Timer Checkbox event enable
+      $('#chkTimer').change(function () {
+        if ($(this).is(':checked')) {
+          $(this).next().text("Timmer On");
+        }
+        else {
+          $(this).next().text("Timmer Off");
+        }
+      });
       // Gauge Display every 3 mints 
       setInterval(function () {
         $.ajax({
@@ -119,15 +137,13 @@ const char index_html[] PROGMEM = R"=====(
             gaugeElement.querySelector(".gauge__fill").style.transform = `rotate(${value / 2}turn)`;
             gaugeElement.querySelector(".gauge__cover").textContent = `${Math.round(value * 100)}%`;
             if (data.motorstatus == 1) {
-                var myCheckbox = document.getElementById('switch-1');
-                myCheckbox.parentElement.MaterialSwitch.on();
-                $('.mdl-switch input[type="checkbox"]').next().text("Motor On");
-              }
-              else {
-                var myCheckbox = document.getElementById('switch-1');
-                myCheckbox.parentElement.MaterialSwitch.off();
-                $('.mdl-switch input[type="checkbox"]').next().text("Motor Off");
-              }
+              $('#switch-1')[0].parentElement.MaterialSwitch.on();
+              $('#switch-1').next().text("Motor On");
+            }
+            else {
+              $('#switch-1')[0].parentElement.MaterialSwitch.off();
+              $('#switch-1').next().text("Motor Off");
+            }
           }
         });
       }, 3000);//time in 3 milliseconds
@@ -139,12 +155,15 @@ const char index_html[] PROGMEM = R"=====(
         var tinxyKey = $('input[name="txtTinxyKey"]').val();
         var TankHeight = $('input[name="txtTankHeight"]').val();
         var tinxyAPIKey = $('input[name="txtTinxyAPIKey"]').val();
-
+        var waterOverflow = $('input[name="txtOverflow"]').val();
+        var timerValue = $('input[name="txtTime"]').val(); 
+        var chkvalue = $('#chkTimer').is(':checked');
+        var timerSatus = chkvalue ? 1 : 0;
         $.ajax(
           {
             type: "GET",
             url: '/configRange?',
-            data: "lower=" + waterLower + "&upper=" + waterUpper + "&Height=" + TankHeight + "&key=" + tinxyKey + "&APIKey=" + tinxyAPIKey,
+            data: "lower=" + waterLower + "&upper=" + waterUpper + "&Height=" + TankHeight + "&key=" + tinxyKey + "&APIKey=" + tinxyAPIKey + "&Overflow=" + waterOverflow + "&time=" + timerValue + "&timersatus=" + timerSatus,
             success: function (result) {
               $("#result").html(result);
               alert("Data Saved Successfuly!!!");
@@ -200,6 +219,25 @@ const char index_html[] PROGMEM = R"=====(
       padding-bottom: 25%;
       box-sizing: border-box;
     }
+
+    .mdl-textfield--floating-label.is-focused .mdl-textfield__label,
+    .mdl-textfield--floating-label.is-dirty .mdl-textfield__label {
+      font-size: 14px !important;
+      top: 1px !important;
+      font-weight: bold;
+    }
+
+    .mdl-switch__label {
+      font-size: 14px !important;
+      color: rgb(63, 81, 181) !important;
+      font-weight: bold !important;
+    }
+
+    .mdl-checkbox__label {
+      font-size: 14px !important;
+      color: rgb(63, 81, 181) !important;
+      font-weight: bold !important;
+    }
   </style>
 </head>
 
@@ -209,14 +247,14 @@ const char index_html[] PROGMEM = R"=====(
     <tr>
       <td colspan="2">
         <label class="mdl-switch mdl-js-switch mdl-js-ripple-effect" for="switch-1">
-          <input type="checkbox" id="switch-1" class="mdl-switch__input">
+          <input type="checkbox" name="switch-1" id="switch-1" class="mdl-switch__input">
           <span class="mdl-switch__label">Motor Off</span>
         </label>
       </td>
     </tr>
     <tr>
-      <td colspan="2" align="center" style="padding-bottom:30px">
-        <label class="mdl-layout-title">Water Level </label>
+      <td colspan="2" align="center" style="padding-bottom:10px">
+        <label class="mdl-layout-title" style="font-weight: bolder;">Water Level </label>
         <br>
         <div class="gauge">
           <div class="gauge__body">
@@ -227,7 +265,8 @@ const char index_html[] PROGMEM = R"=====(
       </td>
     </tr>
     <tr>
-      <td colspan="2"><span class="mdl-layout-title">Settings :</span></td>
+      <td colspan="2"><span class="mdl-layout-title"
+          style="padding-top: 5px; padding-bottom: 5px; font-weight: bolder;">Settings :</span></td>
     </tr>
     <tr>
       <td>
@@ -252,21 +291,46 @@ const char index_html[] PROGMEM = R"=====(
         <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
           <input class="mdl-textfield__input" type="text" name="txtTankHeight">
           <label class="mdl-textfield__label" for="txtTankHeight"> Water Tank Height (CM) : </label>
+          <span class="mdl-textfield__error">Number required!</span>
         </div>
       </td>
+      <td>
+        <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+          <input class="mdl-textfield__input" type="text" name="txtOverflow">
+          <label class="mdl-textfield__label" for="txtOverflow"> Overflow Level (CM) : </label>
+          <span class="mdl-textfield__error">Number required!</span>
+        </div>
+      </td>
+    </tr>
+    <tr>
       <td>
         <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
           <input class="mdl-textfield__input" type="text" name="txtTinxyKey">
           <label class="mdl-textfield__label" for="txtTinxyKey"> Tinxy Device Key : </label>
         </div>
       </td>
-    </tr>
-    <tr>
-      <td colspan="2">
+      <td>
         <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
           <input class="mdl-textfield__input" type="text" name="txtTinxyAPIKey">
           <label class="mdl-textfield__label" for="txtTinxyAPIKey"> Tinxy API Key : </label>
         </div>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <div>
+          <label class="mdl-checkbox mdl-js-checkbox mdl-js-ripple-effect" for="chkTimer">
+            <input type="checkbox" name="chkTimer" id="chkTimer" class="mdl-checkbox__input">
+            <span class="mdl-checkbox__label">Timmer Off</span>
+        </div>
+        <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label" style="padding: 0px !important;">
+          <input class="mdl-textfield__input" type="time" name="txtTime" style="width: 100px;">
+        </div>
+        </label>
+      </td>
+      <td>
+
+
       </td>
     </tr>
     <tr>
@@ -288,6 +352,7 @@ int tankHeight = 100;
 int MotorStatus = 0;
 String tinxyKey = "62568039a0011179488b852a";
 String tinxyAPIKey = "Bearer 498cfc0432856ed534c6c8cde9e8af3c64f721e7";
+int overFlow = 10;
 float volume = 0;
 float liters = 0;
 WiFiClient client;
@@ -295,6 +360,12 @@ String inputString = "";  // a string to hold incoming data
 String dataToSend = "";
 int waterLevelDownCount = 0, waterLevelUpCount = 0;
 ESP8266WebServer server(80);
+DateTime currentTime;
+RTC_DS1307 DS1307_RTC;
+char Week_days[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+int timerSatus;
+String timeValue;
+
 
 void setCrossOrigin() {
   server.sendHeader(F("Access-Control-Allow-Origin"), F("*"));
@@ -382,14 +453,15 @@ int readStringFromEEPROM(int addrOffset, String *strToRead) {
 }
 
 void saveEEPROM() {
-  Serial.println("EEPROM Saving values");
   EEPROM.write(0, 1);
   EEPROM.write(5, tankHeight);
   EEPROM.write(10, waterLevelLowerThreshold);
   EEPROM.write(15, waterLevelUpperThreshold);
-  //EEPROM.write(20, MotorStatus);
+  EEPROM.write(20, overFlow);
+  EEPROM.write(25, timerSatus);
   int addr1 = writeStringToEEPROM(50, tinxyKey);
   int addr2 = writeStringToEEPROM(addr1, tinxyAPIKey);
+  int addr3 = writeStringToEEPROM(addr2, timeValue);
   EEPROM.commit();
 }
 
@@ -398,9 +470,11 @@ void readEEPROM() {
   tankHeight = EEPROM.read(5);
   waterLevelLowerThreshold = EEPROM.read(10);
   waterLevelUpperThreshold = EEPROM.read(15);
-  //MotorStatus = EEPROM.read(20);
+  overFlow = EEPROM.read(20);
+  timerSatus = EEPROM.read(25);
   int addr1 = readStringFromEEPROM(50, &tinxyKey);
   int addr2 = readStringFromEEPROM(addr1, &tinxyAPIKey);
+  int addr3 = readStringFromEEPROM(addr2, &timeValue);
 }
 
 int checkValueinEEPROM() {
@@ -460,6 +534,9 @@ void handleGetData() {
   doc["motorSatus"] = MotorStatus;
   doc["tinxyKey"] = tinxyKey;
   doc["tinxyAPIKey"] = tinxyAPIKey;
+  doc["overFlow"] = overFlow;
+  doc["timervalue"] = timeValue;
+  doc["timerSatus"] = timerSatus;
   String buf;
   serializeJson(doc, buf);
   server.send(200, "application/json", buf);
@@ -473,6 +550,9 @@ void handleRangeSetting() {
   tankHeight = (server.arg(2)).toInt();
   tinxyKey = (server.arg(3));
   tinxyAPIKey = (server.arg(4));
+  overFlow = (server.arg(5)).toInt();
+  timeValue = (server.arg(6));
+  timerSatus = (server.arg(7)).toInt();
   saveEEPROM();
   server.send(200, "text/plain", "OK");
 }
@@ -487,43 +567,67 @@ void measure_Volume() {
   digitalWrite(trigPin, HIGH);
   delayMicroseconds(10);
   digitalWrite(trigPin, LOW);
-
   // Reads the echoPin, returns the sound wave travel time in microseconds
   duration = pulseIn(echoPin, HIGH);
+
   // Calculate the distance
-  float tempdistanceCm = duration * SOUND_VELOCITY / 2;
-  float differance = tempdistanceCm - distanceCm;
-  if (differance < 5.00 || differance > -5.00) {
-    distanceCm = tempdistanceCm;
-    // Convert to inches
-    distanceInch = distanceCm * CM_TO_INCH;
-    // Prints the distance on the Serial Monitor
-    Serial.print("Distance (CM): ");
-    Serial.println(distanceCm);
-    float waterHeightCM = distanceCm;
-    //Serial.print("Water Height in Tank CM : ");
-    //Serial.println(waterHeightCM);
-    volume = (tankHeight - waterHeightCM) / tankHeight;
-    liters = volume * 100;  // for percentage
-    //Serial.println(liters);
+  float sensorValueCM = duration * SOUND_VELOCITY / 2;
+  Serial.println("*****************************");
+  Serial.print("Sensor Value (CM): ");
+  Serial.println(sensorValueCM);
+  Serial.print("distanceCm (CM): ");
+  Serial.println(distanceCm);
+  if(distanceCm == 0.00)
+  {
+    distanceCm = sensorValueCM;
   }
-  if (liters <= waterLevelLowerThreshold)
-    waterLevelDownCount++;
-  else waterLevelDownCount = 0;
-  if (liters >= waterLevelUpperThreshold)
-    waterLevelUpCount++;
-  else waterLevelUpCount = 0;
-  if (waterLevelDownCount == 3) {  //TURN ON RELAY
-    Serial.println("motor turned on");
-    //digitalWrite(MOTOR_CONTROL_PIN, LOW);  //If we use Relay then active LOW (ON)
-    // MotorOn Tinxy API HTTP Call
-    motorOn();
-  }
-  if (waterLevelUpCount == 3) {  //TURN OFF RELAY
-    Serial.println("motor turned off");
-    //digitalWrite(MOTOR_CONTROL_PIN, HIGH);  //If we use Relay then active HIGH (OFF)
-    // MotorOff Tinxy API HTTP Call
-    motorOff();
+  float differance = sensorValueCM - distanceCm;
+  Serial.print("differance (CM): ");
+  Serial.println(differance);
+  if (differance < 5.00) {
+    if (differance > -5.00) {
+      float currentWaterLevel = sensorValueCM - overFlow;
+      if (currentWaterLevel > 0.0) {
+        distanceCm = sensorValueCM;
+        float maxWaterLevel = tankHeight - overFlow;
+        Serial.print("currentWaterLevel (CM): ");
+        Serial.println(currentWaterLevel);
+        Serial.print("maxWaterLevel (CM): ");
+        Serial.println(maxWaterLevel);
+        // Convert to inches
+        //distanceInch = distanceCm * CM_TO_INCH;
+        float waterheight = maxWaterLevel - currentWaterLevel;
+        Serial.print("waterheight (CM): ");
+        Serial.println(waterheight);
+        volume = (waterheight / maxWaterLevel);
+        if (volume > 0.0) {
+          Serial.print("volume (CM): ");
+          Serial.println(volume);
+          liters = volume * 100;  // for percentage
+          Serial.print("Litters : ");
+          Serial.println(liters);
+
+          if (liters <= waterLevelLowerThreshold)
+            waterLevelDownCount++;
+          else waterLevelDownCount = 0;
+          if (liters >= waterLevelUpperThreshold)
+            waterLevelUpCount++;
+          else waterLevelUpCount = 0;
+          if (waterLevelDownCount == 3) {  //TURN ON RELAY
+            Serial.println("motor turned on");
+            //digitalWrite(MOTOR_CONTROL_PIN, LOW);  //If we use Relay then active LOW (ON)
+            // MotorOn Tinxy API HTTP Call
+            motorOn();
+          }
+          if (waterLevelUpCount == 3) {  //TURN OFF RELAY
+            Serial.println("motor turned off");
+            //digitalWrite(MOTOR_CONTROL_PIN, HIGH);  //If we use Relay then active HIGH (OFF)
+            // MotorOff Tinxy API HTTP Call
+            motorOff();
+          }
+        }
+      }
+    }
   }
 }
 
@@ -537,6 +641,7 @@ void runPeriodicFunc() {
     lastRefreshTime1 = millis();
   }
 }
+
 
 void setup() {
   Serial.begin(115200);      // Starts the serial communication
@@ -581,10 +686,18 @@ void setup() {
     saveEEPROM();
   else
     readEEPROM();
+
+  if (!DS1307_RTC.begin()) {
+    Serial.println("Couldn't find RTC");
+    while (1)
+      ;
+  }
+  DS1307_RTC.adjust(DateTime(F(__DATE__), F(__TIME__)));
 }
 
 
-void loop() {
+void loop() {  
+  currentTime = DS1307_RTC.now();
   if (WiFi.status() == WL_CONNECTED) {
     digitalWrite(LED, LOW);  // LED ON
     while (WiFi.status() == WL_CONNECTED) {
@@ -598,6 +711,21 @@ void loop() {
       //Blynk Sync
       Blynk.run();
       timer.run();
+
+      /*Serial.print(now.year(), DEC);
+      Serial.print('/');
+      Serial.print(now.month(), DEC);
+      Serial.print('/');
+      Serial.print(now.day(), DEC);
+      Serial.print(" (");
+      Serial.print(Week_days[now.dayOfTheWeek()]);
+      Serial.print(") ");
+      Serial.print(now.hour(), DEC);
+      Serial.print(':');
+      Serial.print(now.minute(), DEC);
+      Serial.print(':');
+      Serial.print(now.second(), DEC);
+      Serial.println();*/
     }
   } else {
     digitalWrite(LED, HIGH);  // LED OFF
