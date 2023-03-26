@@ -7,6 +7,7 @@
 #include <WiFiManager.h>
 #include <EEPROM.h>
 #include <RTClib.h>
+#include <Espalexa.h>
 
 
 const int trigPin = 12;
@@ -14,6 +15,13 @@ const int echoPin = 14;
 long duration;
 float distanceCm;
 float distanceInch;
+
+//call back function
+void firstLightChanged(uint8_t brightness);
+// device names
+String Device_1_Name = "Water Pump";
+
+
 
 //define sound velocity in cm/uS
 #define SOUND_VELOCITY 0.034
@@ -31,13 +39,7 @@ float distanceInch;
 BlynkTimer timer;
 
 // This function is called every time the Virtual Pin 0 state changes
-BLYNK_WRITE(V0) {
-  // Set incoming value from pin V0 to a variable
-  int value = param.asInt();
 
-  // Update state
-  Blynk.virtualWrite(V1, value);
-}
 
 // This function is called every time the device is connected to the Blynk.Cloud
 BLYNK_CONNECTED() {
@@ -362,9 +364,12 @@ int waterLevelDownCount = 0, waterLevelUpCount = 0;
 ESP8266WebServer server(80);
 DateTime currentTime;
 RTC_DS1307 DS1307_RTC;
-char Week_days[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+char Week_days[7][12] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
 int timerSatus;
 String timeValue;
+Espalexa espalexa;
+
+
 
 
 void setCrossOrigin() {
@@ -378,25 +383,27 @@ void motorOn() {
   //If we used the Tinxy Relay Module
   //if (tinxyKey != NULL && tinxyAPIKey != NULL) {
   Serial.println("MotorON event");
-  WiFiClientSecure client;
-  client.setInsecure();
-  HTTPClient http;
-  String serverPath = "https://backend.tinxy.in/v2/devices/" + tinxyKey + "/toggle";
-  // Your Domain name with URL path or IP address with path
-  //client.connect("backend.tinxy.in", 443);
-  http.begin(client, serverPath);
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("Authorization", tinxyAPIKey);
-  int httpResponseCode = http.POST("{\"request\":{\"state\":1},\"deviceNumber\":1}");
-  Serial.print("HTTP Response code: ");
-  Serial.println(httpResponseCode);
-  if (httpResponseCode == 200) {
-    MotorStatus = 1;
-  } else {
-    MotorStatus = 0;
+  if (liters < waterLevelUpperThreshold) {
+    WiFiClientSecure client;
+    client.setInsecure();
+    HTTPClient http;
+    String serverPath = "https://backend.tinxy.in/v2/devices/" + tinxyKey + "/toggle";
+    // Your Domain name with URL path or IP address with path
+    //client.connect("backend.tinxy.in", 443);
+    http.begin(client, serverPath);
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("Authorization", tinxyAPIKey);
+    int httpResponseCode = http.POST("{\"request\":{\"state\":1},\"deviceNumber\":1}");
+    Serial.print("HTTP Response code: ");
+    Serial.println(httpResponseCode);
+    if (httpResponseCode == 200) {
+      MotorStatus = 1;
+    } else {
+      MotorStatus = 0;
+    }
+    // Free resources
+    http.end();
   }
-  // Free resources
-  http.end();
   //}
 }
 
@@ -430,6 +437,8 @@ void myTimerEvent() {
   // You can send any value at any time.
   // Please don't send more that 10 values per second.
   Blynk.virtualWrite(V1, liters);
+  //Blynk Swich Status
+  Blynk.virtualWrite(V0, MotorStatus);
   //Blynk.virtualWrite(V2, millis() / 1000);
 }
 
@@ -506,8 +515,11 @@ void handleLevelRequest() {
 
 void handleNotFound() {
   setCrossOrigin();
-  String message = "File Not Found\n\n";
-  server.send(404, "text/plain", message);
+  /*String message = "File Not Found\n\n";
+  server.send(404, "text/plain", message);*/
+  if (!espalexa.handleAlexaApiCall(server.uri(), server.arg(0))) {
+    server.send(404, "text/plain", "Not found");
+  }
 }
 
 void handleToggle() {
@@ -577,8 +589,7 @@ void measure_Volume() {
   Serial.println(sensorValueCM);
   Serial.print("distanceCm (CM): ");
   Serial.println(distanceCm);
-  if(distanceCm == 0.00)
-  {
+  if (distanceCm == 0.00) {
     distanceCm = sensorValueCM;
   }
   float differance = sensorValueCM - distanceCm;
@@ -590,19 +601,19 @@ void measure_Volume() {
       if (currentWaterLevel > 0.0) {
         distanceCm = sensorValueCM;
         float maxWaterLevel = tankHeight - overFlow;
-        Serial.print("currentWaterLevel (CM): ");
+        /*Serial.print("currentWaterLevel (CM): ");
         Serial.println(currentWaterLevel);
         Serial.print("maxWaterLevel (CM): ");
-        Serial.println(maxWaterLevel);
+        Serial.println(maxWaterLevel);*/
         // Convert to inches
         //distanceInch = distanceCm * CM_TO_INCH;
         float waterheight = maxWaterLevel - currentWaterLevel;
-        Serial.print("waterheight (CM): ");
-        Serial.println(waterheight);
+        //Serial.print("waterheight (CM): ");
+        //Serial.println(waterheight);
         volume = (waterheight / maxWaterLevel);
         if (volume > 0.0) {
-          Serial.print("volume (CM): ");
-          Serial.println(volume);
+          //Serial.print("volume (CM): ");
+          //Serial.println(volume);
           liters = volume * 100;  // for percentage
           Serial.print("Litters : ");
           Serial.println(liters);
@@ -614,15 +625,19 @@ void measure_Volume() {
             waterLevelUpCount++;
           else waterLevelUpCount = 0;
           if (waterLevelDownCount == 3) {  //TURN ON RELAY
-            Serial.println("motor turned on");
+            Serial.println("Motor turned on");
             //digitalWrite(MOTOR_CONTROL_PIN, LOW);  //If we use Relay then active LOW (ON)
             // MotorOn Tinxy API HTTP Call
             motorOn();
           }
           if (waterLevelUpCount == 3) {  //TURN OFF RELAY
-            Serial.println("motor turned off");
+            Serial.println("Motor turned off");
             //digitalWrite(MOTOR_CONTROL_PIN, HIGH);  //If we use Relay then active HIGH (OFF)
             // MotorOff Tinxy API HTTP Call
+            motorOff();
+          }
+          if (liters > 99.0) {
+            Serial.println("Motor turned off");
             motorOff();
           }
         }
@@ -642,6 +657,82 @@ void runPeriodicFunc() {
   }
 }
 
+String getValue(String data, char separator, int index) {
+  int found = 0;
+  int strIndex[] = { 0, -1 };
+  int maxIndex = data.length() - 1;
+
+  for (int i = 0; i <= maxIndex && found <= index; i++) {
+    if (data.charAt(i) == separator || i == maxIndex) {
+      found++;
+      strIndex[0] = strIndex[1] + 1;
+      strIndex[1] = (i == maxIndex) ? i + 1 : i;
+    }
+  }
+  return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
+}
+
+void Timer() {
+  currentTime = DS1307_RTC.now();
+  String H = getValue(timeValue, ':', 0);
+  String M = getValue(timeValue, ':', 1);
+  int timerhour = H.toInt();
+  int timermint = M.toInt();
+  int curhour = currentTime.hour();
+  int curmint = currentTime.minute();
+  /*Serial.print(timerhour);
+  Serial.print(':');
+  Serial.println(timermint);
+  Serial.println("Current Time -");
+  Serial.print(curhour);
+  Serial.print(':');
+  Serial.println(curmint);*/
+  if (timerSatus == 1) {
+    if (timerhour == curhour) {
+      if (timermint == curmint) {
+        if (MotorStatus == 0) {
+          Serial.println("Motor turned on");
+          motorOn();
+        }
+      }
+    }
+  }
+}
+//our callback functions
+void firstLightChanged(uint8_t brightness) {
+  //Control the device
+  EspalexaDevice* d1 = espalexa.getDevice(0);
+  if (brightness == 255) {
+    motorOn();
+    Serial.println("Motor Turned ON");
+    d1->setPercent(100);
+  } else {
+    motorOff();
+    Serial.println("Motor Turned OFF");
+    d1->setPercent(0);
+  }
+}
+
+void addDevices() {
+  // Define your devices here.
+  espalexa.addDevice(Device_1_Name, firstLightChanged);  //simplest definition, default state off
+  espalexa.begin(&server);
+  Serial.println("Alaxa Begin");
+}
+
+BLYNK_WRITE(V0) {
+  // Set incoming value from pin V0 to a variable
+  int pinValue = param.asInt();
+  Serial.print("Blynk Value : ");
+  Serial.println(pinValue);
+  if (pinValue == 1) {
+    Serial.println("Blynk Motor On");
+    motorOn();
+  } else {
+    Serial.println("Blynk Motor Off");
+    motorOff();
+  }
+}
 
 void setup() {
   Serial.begin(115200);      // Starts the serial communication
@@ -657,7 +748,8 @@ void setup() {
   //wifiManager.resetSettings();
   wifiManager.autoConnect("AutoWaterPump Wifi");
   Serial.println("Wifi Connected");
-
+  //add divice to Alexa
+  addDevices();
   //WebServer Setup
   Serial.print("Local IP Address:");
   Serial.println(WiFi.localIP());
@@ -666,8 +758,13 @@ void setup() {
   server.on("/configRange", HTTP_GET, handleRangeSetting);
   server.on("/getdata", HTTP_GET, handleGetData);
   server.on("/toggle", HTTP_GET, handleToggle);
-  server.onNotFound(handleNotFound);
-  server.begin();
+  server.onNotFound([]() {
+    if (!espalexa.handleAlexaApiCall(server.uri(), server.arg(0))) {
+      server.send(404, "text/plain", "Not found");
+    }
+  });
+  //server.onNotFound(handleNotFound);
+  //server.begin();
   Serial.println("HTTP server started");
   Serial.print("WIFI Settings : SSID - ");
   Serial.print(WiFi.SSID().c_str());
@@ -696,13 +793,13 @@ void setup() {
 }
 
 
-void loop() {  
-  currentTime = DS1307_RTC.now();
+void loop() {
   if (WiFi.status() == WL_CONNECTED) {
     digitalWrite(LED, LOW);  // LED ON
     while (WiFi.status() == WL_CONNECTED) {
       runPeriodicFunc();
-      server.handleClient();
+      //WebServer haddle request
+      //server.handleClient();
       //LED Function
       digitalWrite(LED, HIGH);
       delay(500);
@@ -711,21 +808,10 @@ void loop() {
       //Blynk Sync
       Blynk.run();
       timer.run();
-
-      /*Serial.print(now.year(), DEC);
-      Serial.print('/');
-      Serial.print(now.month(), DEC);
-      Serial.print('/');
-      Serial.print(now.day(), DEC);
-      Serial.print(" (");
-      Serial.print(Week_days[now.dayOfTheWeek()]);
-      Serial.print(") ");
-      Serial.print(now.hour(), DEC);
-      Serial.print(':');
-      Serial.print(now.minute(), DEC);
-      Serial.print(':');
-      Serial.print(now.second(), DEC);
-      Serial.println();*/
+      Timer();
+      //loop the Alexa
+      espalexa.loop();
+      delay(1);
     }
   } else {
     digitalWrite(LED, HIGH);  // LED OFF
