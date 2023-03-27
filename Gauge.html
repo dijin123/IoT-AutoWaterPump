@@ -12,7 +12,7 @@
       //Get all data from the IoT board
       $.ajax({
         type: "GET",
-        url: "http://192.168.0.197/getdata",
+        url: "/getdata",
         success: function (data) {
           $('input[name="txtwaterLower"]')[0].parentElement.MaterialTextfield.change(data.tankLower);
           $('input[name="txtwaterUpper"]')[0].parentElement.MaterialTextfield.change(data.tankUpper);
@@ -21,6 +21,8 @@
           $('input[name="txtTinxyAPIKey"]')[0].parentElement.MaterialTextfield.change(data.tinxyAPIKey);
           $('input[name="txtOverflow"]')[0].parentElement.MaterialTextfield.change(data.overFlow);
           $('input[name="txtTime"]')[0].parentElement.MaterialTextfield.change(data.timervalue);
+          $('input[name="txtMobileNumber"]')[0].parentElement.MaterialTextfield.change(data.mobNum);
+          $('input[name="txtWhatsAPIKey"]')[0].parentElement.MaterialTextfield.change(data.whatsAPIkey);
           if (data.motorSatus == 0) {
             $('#switch-1')[0].parentElement.MaterialSwitch.off();
             $('#switch-1').next().text("Motor Off");
@@ -55,7 +57,7 @@
         $.ajax(
           {
             type: "GET",
-            url: 'http://192.168.0.197/toggle?',
+            url: "/toggle?",
             data: "motorsatus=" + status,
             success: function (result) {
               $("#result").html(result);
@@ -75,7 +77,7 @@
       setInterval(function () {
         $.ajax({
           type: "GET",
-          url: "http://192.168.0.197/level",
+          url: "/level",
           success: function (data) {
             console.log(data.level);
             console.log(data.motorstatus);
@@ -106,16 +108,18 @@
         var tinxyAPIKey = $('input[name="txtTinxyAPIKey"]').val();
         var waterOverflow = $('input[name="txtOverflow"]').val();
         var timerValue = $('input[name="txtTime"]').val(); 
+        var mobNum = $('input[name="txtMobileNumber"]').val(); 
+        var whatsAPIkey = $('input[name="txtWhatsAPIKey"]').val(); 
         var chkvalue = $('#chkTimer').is(':checked');
         var timerSatus = chkvalue ? 1 : 0;
         $.ajax(
           {
             type: "GET",
-            url: 'http://192.168.0.197/configRange?',
-            data: "lower=" + waterLower + "&upper=" + waterUpper + "&Height=" + TankHeight + "&key=" + tinxyKey + "&APIKey=" + tinxyAPIKey + "&Overflow=" + waterOverflow + "&time=" + timerValue + "&timersatus=" + timerSatus,
+            url: "/configRange?",
+            data: "wlow=" + waterLower + "&whi=" + waterUpper + "&hght=" + TankHeight + "&tKey=" + tinxyKey + "&tAPI=" + tinxyAPIKey + "&Ovflow=" + waterOverflow + "&time=" + timerValue + "&tSat=" + timerSatus + "&mob="+ mobNum + "&whtAPI=" + whatsAPIkey,
             success: function (result) {
               $("#result").html(result);
-              alert("Data Saved Successfuly!!!");
+              alert("Data Saved Successfuly !!!");
             }
           });
       });
@@ -267,6 +271,20 @@
     </tr>
     <tr>
       <td>
+        <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+          <input class="mdl-textfield__input" type="text" name="txtMobileNumber">
+          <label class="mdl-textfield__label" for="txtMobileNumber"> WhatsApp Number : </label>
+        </div>
+      </td>
+      <td>
+        <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+          <input class="mdl-textfield__input" type="text" name="txtWhatsAPIKey">
+          <label class="mdl-textfield__label" for="txtWhatsAPIKey"> WhatsApp API Key : </label>
+        </div>
+      </td>
+    </tr>
+    <tr>
+      <td>
         <div>
           <label class="mdl-checkbox mdl-js-checkbox mdl-js-ripple-effect" for="chkTimer">
             <input type="checkbox" name="chkTimer" id="chkTimer" class="mdl-checkbox__input">
@@ -277,20 +295,13 @@
         </div>
         </label>
       </td>
-      <td>
-
-
-      </td>
-    </tr>
-    <tr>
-      <td colspan="2" align="right">
+      <td align="right">
         <button id="btnSave"
-          class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-button--accent">
-          Save
+        class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-button--accent">
+        Save Data
         </button>
       </td>
     </tr>
   </table>
 </body>
-
 </html>

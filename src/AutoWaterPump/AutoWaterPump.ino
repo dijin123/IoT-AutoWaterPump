@@ -8,6 +8,8 @@
 #include <EEPROM.h>
 #include <RTClib.h>
 #include <Espalexa.h>
+#include <UrlEncode.h>
+#include <string>
 
 
 const int trigPin = 12;
@@ -74,6 +76,8 @@ const char index_html[] PROGMEM = R"=====(
           $('input[name="txtTinxyAPIKey"]')[0].parentElement.MaterialTextfield.change(data.tinxyAPIKey);
           $('input[name="txtOverflow"]')[0].parentElement.MaterialTextfield.change(data.overFlow);
           $('input[name="txtTime"]')[0].parentElement.MaterialTextfield.change(data.timervalue);
+          $('input[name="txtMobileNumber"]')[0].parentElement.MaterialTextfield.change(data.mobNum);
+          $('input[name="txtWhatsAPIKey"]')[0].parentElement.MaterialTextfield.change(data.whatsAPIkey);
           if (data.motorSatus == 0) {
             $('#switch-1')[0].parentElement.MaterialSwitch.off();
             $('#switch-1').next().text("Motor Off");
@@ -108,7 +112,7 @@ const char index_html[] PROGMEM = R"=====(
         $.ajax(
           {
             type: "GET",
-            url: '/toggle?',
+            url: "/toggle?",
             data: "motorsatus=" + status,
             success: function (result) {
               $("#result").html(result);
@@ -159,16 +163,18 @@ const char index_html[] PROGMEM = R"=====(
         var tinxyAPIKey = $('input[name="txtTinxyAPIKey"]').val();
         var waterOverflow = $('input[name="txtOverflow"]').val();
         var timerValue = $('input[name="txtTime"]').val(); 
+        var mobNum = $('input[name="txtMobileNumber"]').val(); 
+        var whatsAPIkey = $('input[name="txtWhatsAPIKey"]').val(); 
         var chkvalue = $('#chkTimer').is(':checked');
         var timerSatus = chkvalue ? 1 : 0;
         $.ajax(
           {
             type: "GET",
-            url: '/configRange?',
-            data: "lower=" + waterLower + "&upper=" + waterUpper + "&Height=" + TankHeight + "&key=" + tinxyKey + "&APIKey=" + tinxyAPIKey + "&Overflow=" + waterOverflow + "&time=" + timerValue + "&timersatus=" + timerSatus,
+            url: "/configRange?",
+            data: "wlow=" + waterLower + "&whi=" + waterUpper + "&hght=" + TankHeight + "&tKey=" + tinxyKey + "&tAPI=" + tinxyAPIKey + "&Ovflow=" + waterOverflow + "&time=" + timerValue + "&tSat=" + timerSatus + "&mob="+ mobNum + "&whtAPI=" + whatsAPIkey,
             success: function (result) {
               $("#result").html(result);
-              alert("Data Saved Successfuly!!!");
+              alert("Data Saved Successfuly !!!");
             }
           });
       });
@@ -320,6 +326,20 @@ const char index_html[] PROGMEM = R"=====(
     </tr>
     <tr>
       <td>
+        <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+          <input class="mdl-textfield__input" type="text" name="txtMobileNumber">
+          <label class="mdl-textfield__label" for="txtMobileNumber"> WhatsApp Number : </label>
+        </div>
+      </td>
+      <td>
+        <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+          <input class="mdl-textfield__input" type="text" name="txtWhatsAPIKey">
+          <label class="mdl-textfield__label" for="txtWhatsAPIKey"> WhatsApp API Key : </label>
+        </div>
+      </td>
+    </tr>
+    <tr>
+      <td>
         <div>
           <label class="mdl-checkbox mdl-js-checkbox mdl-js-ripple-effect" for="chkTimer">
             <input type="checkbox" name="chkTimer" id="chkTimer" class="mdl-checkbox__input">
@@ -330,16 +350,10 @@ const char index_html[] PROGMEM = R"=====(
         </div>
         </label>
       </td>
-      <td>
-
-
-      </td>
-    </tr>
-    <tr>
-      <td colspan="2" align="right">
+      <td align="right">
         <button id="btnSave"
-          class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-button--accent">
-          Save
+        class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-button--accent">
+        Save Data
         </button>
       </td>
     </tr>
@@ -353,7 +367,7 @@ int waterLevelUpperThreshold = 80;
 int tankHeight = 100;
 int MotorStatus = 0;
 String tinxyKey = "62568039a0011179488b852a";
-String tinxyAPIKey = "Bearer 498cfc0432856ed534c6c8cde9e8af3c64f721e7";
+String tinxyAPIKey = "498cfc0432856ed534c6c8cde9e8af3c64f721e7";
 int overFlow = 10;
 float volume = 0;
 float liters = 0;
@@ -368,9 +382,10 @@ char Week_days[7][12] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday"
 int timerSatus;
 String timeValue;
 Espalexa espalexa;
-
-
-
+String phoneNumber = "0";
+String whatsAppApiKey = "0";
+String curDateTime;
+int timerRetry = 0;
 
 void setCrossOrigin() {
   server.sendHeader(F("Access-Control-Allow-Origin"), F("*"));
@@ -378,6 +393,35 @@ void setCrossOrigin() {
   server.sendHeader(F("Access-Control-Allow-Methods"), F("PUT,POST,GET,OPTIONS"));
   server.sendHeader(F("Access-Control-Allow-Headers"), F("*"));
 };
+
+void sendMessage(String message) {
+  if (phoneNumber.length() >=10 ) {
+    if (whatsAppApiKey.length() >= 7) {
+      // Data to send with HTTP POST
+      String url = "http://api.callmebot.com/whatsapp.php?phone=" + String(phoneNumber) + "&apikey=" + String(whatsAppApiKey) + "&text=" + urlEncode(message);
+      //Serial.println(url);
+      WiFiClient client;
+      HTTPClient http;
+      http.begin(client, url);
+
+      // Specify content-type header
+      http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+
+      // Send HTTP POST request
+      int httpResponseCode = http.POST(url);
+      if (httpResponseCode == 200) {
+        Serial.print("WhatsApp Message sent successfully");
+      } else {
+        Serial.println("Error sending the WhatsApp message");
+        Serial.print("HTTP response code: ");
+        Serial.println(httpResponseCode);
+      }
+
+      // Free resources
+      http.end();
+    }
+  }
+}
 
 void motorOn() {
   //If we used the Tinxy Relay Module
@@ -391,8 +435,9 @@ void motorOn() {
     // Your Domain name with URL path or IP address with path
     //client.connect("backend.tinxy.in", 443);
     http.begin(client, serverPath);
+    String token = "Bearer " + tinxyAPIKey;
     http.addHeader("Content-Type", "application/json");
-    http.addHeader("Authorization", tinxyAPIKey);
+    http.addHeader("Authorization", token);
     int httpResponseCode = http.POST("{\"request\":{\"state\":1},\"deviceNumber\":1}");
     Serial.print("HTTP Response code: ");
     Serial.println(httpResponseCode);
@@ -418,8 +463,9 @@ void motorOff() {
   // Your Domain name with URL path or IP address with path
   //client.connect("backend.tinxy.in", 443);
   http.begin(client, serverPath);
+  String token = "Bearer " + tinxyAPIKey;
   http.addHeader("Content-Type", "application/json");
-  http.addHeader("Authorization", tinxyAPIKey);
+  http.addHeader("Authorization", token);
   int httpResponseCode = http.POST("{\"request\":{\"state\":0},\"deviceNumber\":1}");
   Serial.print("HTTP Response code: ");
   Serial.println(httpResponseCode);
@@ -471,6 +517,8 @@ void saveEEPROM() {
   int addr1 = writeStringToEEPROM(50, tinxyKey);
   int addr2 = writeStringToEEPROM(addr1, tinxyAPIKey);
   int addr3 = writeStringToEEPROM(addr2, timeValue);
+  int addr4 = writeStringToEEPROM(addr3, phoneNumber);
+  int addr5 = writeStringToEEPROM(addr4, whatsAppApiKey);
   EEPROM.commit();
 }
 
@@ -484,6 +532,8 @@ void readEEPROM() {
   int addr1 = readStringFromEEPROM(50, &tinxyKey);
   int addr2 = readStringFromEEPROM(addr1, &tinxyAPIKey);
   int addr3 = readStringFromEEPROM(addr2, &timeValue);
+  int addr4 = readStringFromEEPROM(addr3, &phoneNumber);
+  int addr5 = readStringFromEEPROM(addr4, &whatsAppApiKey);
 }
 
 int checkValueinEEPROM() {
@@ -515,11 +565,8 @@ void handleLevelRequest() {
 
 void handleNotFound() {
   setCrossOrigin();
-  /*String message = "File Not Found\n\n";
-  server.send(404, "text/plain", message);*/
-  if (!espalexa.handleAlexaApiCall(server.uri(), server.arg(0))) {
-    server.send(404, "text/plain", "Not found");
-  }
+  String message = "File Not Found\n\n";
+  server.send(404, "text/plain", message);
 }
 
 void handleToggle() {
@@ -529,10 +576,12 @@ void handleToggle() {
     if (liters < waterLevelUpperThreshold) {
       motorOn();
       MotorStatus = 1;
+      sendMessage("Motor Started by API on " + curDateTime);
     }
   } else {
     motorOff();
     MotorStatus = 0;
+    sendMessage("Motor Stopped by API on " + curDateTime);
   }
   server.send(200, "text/plain", "OK");
 }
@@ -549,6 +598,8 @@ void handleGetData() {
   doc["overFlow"] = overFlow;
   doc["timervalue"] = timeValue;
   doc["timerSatus"] = timerSatus;
+  doc["mobNum"] = phoneNumber;
+  doc["whatsAPIkey"] = whatsAppApiKey;
   String buf;
   serializeJson(doc, buf);
   server.send(200, "application/json", buf);
@@ -565,6 +616,8 @@ void handleRangeSetting() {
   overFlow = (server.arg(5)).toInt();
   timeValue = (server.arg(6));
   timerSatus = (server.arg(7)).toInt();
+  phoneNumber = (server.arg(8));
+  whatsAppApiKey = (server.arg(9));
   saveEEPROM();
   server.send(200, "text/plain", "OK");
 }
@@ -627,18 +680,21 @@ void measure_Volume() {
           if (waterLevelDownCount == 3) {  //TURN ON RELAY
             Serial.println("Motor turned on");
             //digitalWrite(MOTOR_CONTROL_PIN, LOW);  //If we use Relay then active LOW (ON)
-            // MotorOn Tinxy API HTTP Call
+            // MotorOn Tinxy API HTTP Calmi 
             motorOn();
+            sendMessage("Low Water level - Motor Started on " + curDateTime);
           }
           if (waterLevelUpCount == 3) {  //TURN OFF RELAY
             Serial.println("Motor turned off");
             //digitalWrite(MOTOR_CONTROL_PIN, HIGH);  //If we use Relay then active HIGH (OFF)
             // MotorOff Tinxy API HTTP Call
             motorOff();
+            sendMessage("High Water Level - Motor Stopped on " + curDateTime);
           }
           if (liters > 99.0) {
             Serial.println("Motor turned off");
             motorOff();
+            sendMessage("Motor Forcefully Stopped on " + curDateTime);
           }
         }
       }
@@ -680,6 +736,7 @@ void Timer() {
   int timermint = M.toInt();
   int curhour = currentTime.hour();
   int curmint = currentTime.minute();
+  curDateTime = currentTime.timestamp();
   /*Serial.print(timerhour);
   Serial.print(':');
   Serial.println(timermint);
@@ -693,6 +750,7 @@ void Timer() {
         if (MotorStatus == 0) {
           Serial.println("Motor turned on");
           motorOn();
+          sendMessage("Motor Started by Timer on " + curDateTime);
         }
       }
     }
@@ -701,15 +759,17 @@ void Timer() {
 //our callback functions
 void firstLightChanged(uint8_t brightness) {
   //Control the device
-  EspalexaDevice* d1 = espalexa.getDevice(0);
+  EspalexaDevice *d1 = espalexa.getDevice(0);
   if (brightness == 255) {
     motorOn();
     Serial.println("Motor Turned ON");
     d1->setPercent(100);
+    sendMessage("Motor Started by Alexa on " + curDateTime);
   } else {
     motorOff();
     Serial.println("Motor Turned OFF");
     d1->setPercent(0);
+    sendMessage("Motor Stopped by Alexa on " + curDateTime);
   }
 }
 
@@ -763,6 +823,7 @@ void setup() {
       server.send(404, "text/plain", "Not found");
     }
   });
+  // Webservice enable
   //server.onNotFound(handleNotFound);
   //server.begin();
   Serial.println("HTTP server started");
@@ -774,7 +835,7 @@ void setup() {
   Blynk.begin(BLYNK_AUTH_TOKEN, WiFi.SSID().c_str(), WiFi.psk().c_str());
   Serial.println("Blynk started");
   // Setup a Blynk function to be called every second
-  timer.setInterval(1000L, myTimerEvent);
+  timer.setInterval(2000L, myTimerEvent);
 
   //EEPROM Setup
   EEPROM.begin(512);
