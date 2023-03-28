@@ -395,7 +395,7 @@ void setCrossOrigin() {
 };
 
 void sendMessage(String message) {
-  if (phoneNumber.length() >=10 ) {
+  if (phoneNumber.length() >= 10) {
     if (whatsAppApiKey.length() >= 7) {
       // Data to send with HTTP POST
       String url = "http://api.callmebot.com/whatsapp.php?phone=" + String(phoneNumber) + "&apikey=" + String(whatsAppApiKey) + "&text=" + urlEncode(message);
@@ -427,7 +427,38 @@ void motorOn() {
   //If we used the Tinxy Relay Module
   //if (tinxyKey != NULL && tinxyAPIKey != NULL) {
   Serial.println("MotorON event");
-  if (liters < waterLevelUpperThreshold) {
+  if (MotorStatus == 0) {
+    if (liters < waterLevelUpperThreshold) {
+      WiFiClientSecure client;
+      client.setInsecure();
+      HTTPClient http;
+      String serverPath = "https://backend.tinxy.in/v2/devices/" + tinxyKey + "/toggle";
+      // Your Domain name with URL path or IP address with path
+      //client.connect("backend.tinxy.in", 443);
+      http.begin(client, serverPath);
+      String token = "Bearer " + tinxyAPIKey;
+      http.addHeader("Content-Type", "application/json");
+      http.addHeader("Authorization", token);
+      int httpResponseCode = http.POST("{\"request\":{\"state\":1},\"deviceNumber\":1}");
+      Serial.print("HTTP Response code: ");
+      Serial.println(httpResponseCode);
+      if (httpResponseCode == 200) {
+        MotorStatus = 1;
+      } else {
+        MotorStatus = 0;
+      }
+      // Free resources
+      http.end();
+    }
+  }
+  //}
+}
+
+void motorOff() {
+  //If we used the Tinxy Relay Module
+  //if (tinxyKey != NULL && tinxyAPIKey != NULL) {
+  if (MotorStatus == 1) {
+    Serial.println("MotorOFF event");
     WiFiClientSecure client;
     client.setInsecure();
     HTTPClient http;
@@ -438,44 +469,17 @@ void motorOn() {
     String token = "Bearer " + tinxyAPIKey;
     http.addHeader("Content-Type", "application/json");
     http.addHeader("Authorization", token);
-    int httpResponseCode = http.POST("{\"request\":{\"state\":1},\"deviceNumber\":1}");
+    int httpResponseCode = http.POST("{\"request\":{\"state\":0},\"deviceNumber\":1}");
     Serial.print("HTTP Response code: ");
     Serial.println(httpResponseCode);
     if (httpResponseCode == 200) {
-      MotorStatus = 1;
-    } else {
       MotorStatus = 0;
+    } else {
+      MotorStatus = 1;
     }
     // Free resources
     http.end();
   }
-  //}
-}
-
-void motorOff() {
-  //If we used the Tinxy Relay Module
-  //if (tinxyKey != NULL && tinxyAPIKey != NULL) {
-  Serial.println("MotorOFF event");
-  WiFiClientSecure client;
-  client.setInsecure();
-  HTTPClient http;
-  String serverPath = "https://backend.tinxy.in/v2/devices/" + tinxyKey + "/toggle";
-  // Your Domain name with URL path or IP address with path
-  //client.connect("backend.tinxy.in", 443);
-  http.begin(client, serverPath);
-  String token = "Bearer " + tinxyAPIKey;
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("Authorization", token);
-  int httpResponseCode = http.POST("{\"request\":{\"state\":0},\"deviceNumber\":1}");
-  Serial.print("HTTP Response code: ");
-  Serial.println(httpResponseCode);
-  if (httpResponseCode == 200) {
-    MotorStatus = 0;
-  } else {
-    MotorStatus = 1;
-  }
-  // Free resources
-  http.end();
   //}
 }
 // This function sends Arduino's uptime every second to Virtual Pin 2.
@@ -680,7 +684,7 @@ void measure_Volume() {
           if (waterLevelDownCount == 3) {  //TURN ON RELAY
             Serial.println("Motor turned on");
             //digitalWrite(MOTOR_CONTROL_PIN, LOW);  //If we use Relay then active LOW (ON)
-            // MotorOn Tinxy API HTTP Calmi 
+            // MotorOn Tinxy API HTTP Calmi
             motorOn();
             sendMessage("Low Water level - Motor Started on " + curDateTime);
           }
@@ -736,18 +740,20 @@ void Timer() {
   int timermint = M.toInt();
   int curhour = currentTime.hour();
   int curmint = currentTime.minute();
+  int cursec = currentTime.second();
   curDateTime = currentTime.timestamp();
-  /*Serial.print(timerhour);
+  Serial.print("Timer Time - ");
+  Serial.print(timerhour);
   Serial.print(':');
   Serial.println(timermint);
-  Serial.println("Current Time -");
+  Serial.print("Current Time - ");
   Serial.print(curhour);
   Serial.print(':');
-  Serial.println(curmint);*/
+  Serial.println(curmint);
   if (timerSatus == 1) {
     if (timerhour == curhour) {
       if (timermint == curmint) {
-        if (MotorStatus == 0) {
+        if (cursec == 0) {
           Serial.println("Motor turned on");
           motorOn();
           sendMessage("Motor Started by Timer on " + curDateTime);
@@ -756,6 +762,7 @@ void Timer() {
     }
   }
 }
+
 //our callback functions
 void firstLightChanged(uint8_t brightness) {
   //Control the device
@@ -823,7 +830,7 @@ void setup() {
       server.send(404, "text/plain", "Not found");
     }
   });
-  // Webservice enable
+  // WebService Enabling. Disable due to ESPALEXA is running 
   //server.onNotFound(handleNotFound);
   //server.begin();
   Serial.println("HTTP server started");
@@ -835,7 +842,7 @@ void setup() {
   Blynk.begin(BLYNK_AUTH_TOKEN, WiFi.SSID().c_str(), WiFi.psk().c_str());
   Serial.println("Blynk started");
   // Setup a Blynk function to be called every second
-  timer.setInterval(2000L, myTimerEvent);
+  timer.setInterval(3000L, myTimerEvent);
 
   //EEPROM Setup
   EEPROM.begin(512);
@@ -847,10 +854,12 @@ void setup() {
 
   if (!DS1307_RTC.begin()) {
     Serial.println("Couldn't find RTC");
-    while (1)
-      ;
+    while (1);
   }
-  DS1307_RTC.adjust(DateTime(F(__DATE__), F(__TIME__)));
+
+  // Comment this code. Run this 1st time only for set the time to RTC timmer
+  //DS1307_RTC.adjust(DateTime(F(__DATE__), F(__TIME__)));
+
 }
 
 
@@ -859,8 +868,10 @@ void loop() {
     digitalWrite(LED, LOW);  // LED ON
     while (WiFi.status() == WL_CONNECTED) {
       runPeriodicFunc();
-      //WebServer haddle request
+
+      //WebServer haddle request. Disable due to ESPALEXA is running
       //server.handleClient();
+
       //LED Function
       digitalWrite(LED, HIGH);
       delay(500);
@@ -869,6 +880,7 @@ void loop() {
       //Blynk Sync
       Blynk.run();
       timer.run();
+      // Timmer Module Tigger Event
       Timer();
       //loop the Alexa
       espalexa.loop();
