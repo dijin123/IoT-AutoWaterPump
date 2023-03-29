@@ -56,6 +56,9 @@ const char index_html[] PROGMEM = R"=====(
 <!DOCTYPE html>
 <html>
 <head>
+  <title>Auto Water Pump</title>
+  <link rel="icon" type="image/x-icon" href="https://img.icons8.com/external-flat-wichaiwi/256/external-iot-internet-of-things-flat-wichaiwi-11.png">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.3/jquery.min.js"></script>
   <script src="https://storage.googleapis.com/code.getmdl.io/1.0.6/material.min.js"></script>
   <link rel="stylesheet" href="https://storage.googleapis.com/code.getmdl.io/1.0.6/material.indigo-pink.min.css">
@@ -251,7 +254,7 @@ const char index_html[] PROGMEM = R"=====(
 
 <body>
   <br>
-  <table style="margin-left:auto;margin-right:auto; margin-top:10px">
+  <table style="margin-left:auto; margin-right:auto; padding: 20px;">
     <tr>
       <td colspan="2">
         <label class="mdl-switch mdl-js-switch mdl-js-ripple-effect" for="switch-1">
@@ -444,8 +447,6 @@ void motorOn() {
       Serial.println(httpResponseCode);
       if (httpResponseCode == 200) {
         MotorStatus = 1;
-      } else {
-        MotorStatus = 0;
       }
       // Free resources
       http.end();
@@ -474,8 +475,6 @@ void motorOff() {
     Serial.println(httpResponseCode);
     if (httpResponseCode == 200) {
       MotorStatus = 0;
-    } else {
-      MotorStatus = 1;
     }
     // Free resources
     http.end();
@@ -578,14 +577,16 @@ void handleToggle() {
   int mStatus = (server.arg(0)).toInt();
   if (mStatus == 1) {
     if (liters < waterLevelUpperThreshold) {
-      motorOn();
-      MotorStatus = 1;
-      sendMessage("Motor Started by API on " + curDateTime);
+      if (MotorStatus == 0) {
+        motorOn();
+        sendMessage("Motor Started by API on " + curDateTime);
+      }
     }
   } else {
-    motorOff();
-    MotorStatus = 0;
-    sendMessage("Motor Stopped by API on " + curDateTime);
+    if (MotorStatus == 1) {
+      motorOff();
+      sendMessage("Motor Stopped by API on " + curDateTime);
+    }
   }
   server.send(200, "text/plain", "OK");
 }
@@ -682,31 +683,33 @@ void measure_Volume() {
             waterLevelUpCount++;
           else waterLevelUpCount = 0;
           if (waterLevelDownCount == 3) {  //TURN ON RELAY
-            Serial.println("Motor turned on");
-            //digitalWrite(MOTOR_CONTROL_PIN, LOW);  //If we use Relay then active LOW (ON)
-            // MotorOn Tinxy API HTTP Calmi
-            motorOn();
-            sendMessage("Low Water level - Motor Started on " + curDateTime);
+            // MotorOn Tinxy API HTTP Call
+            if (MotorStatus == 0) {
+              motorOn();
+              Serial.println("Motor turned on");
+              sendMessage("Low Water level - Motor Started on " + curDateTime);
+            }
           }
           if (waterLevelUpCount == 3) {  //TURN OFF RELAY
-            Serial.println("Motor turned off");
-            //digitalWrite(MOTOR_CONTROL_PIN, HIGH);  //If we use Relay then active HIGH (OFF)
             // MotorOff Tinxy API HTTP Call
-            motorOff();
-            sendMessage("High Water Level - Motor Stopped on " + curDateTime);
+            if (MotorStatus == 1) {
+              motorOff();
+              Serial.println("Motor turned off");
+              sendMessage("High Water Level - Motor Stopped on " + curDateTime);
+            }
           }
           if (liters > 99.0) {
-            Serial.println("Motor turned off");
-            motorOff();
-            sendMessage("Motor Forcefully Stopped on " + curDateTime);
+            if (MotorStatus == 1) {
+              motorOff();
+              Serial.println("Motor turned off");
+              sendMessage("Motor Forcefully Stopped on " + curDateTime);
+            }
           }
         }
       }
     }
   }
 }
-
-
 
 void runPeriodicFunc() {
   static const unsigned long REFRESH_INTERVAL1 = 1000;  // 2.1sec
@@ -754,9 +757,11 @@ void Timer() {
     if (timerhour == curhour) {
       if (timermint == curmint) {
         if (cursec == 0) {
-          Serial.println("Motor turned on");
-          motorOn();
-          sendMessage("Motor Started by Timer on " + curDateTime);
+          if (MotorStatus == 0) {
+            motorOn();
+            Serial.println("Motor turned on");
+            sendMessage("Motor Started by Timer on " + curDateTime);
+          }
         }
       }
     }
@@ -768,15 +773,19 @@ void firstLightChanged(uint8_t brightness) {
   //Control the device
   EspalexaDevice *d1 = espalexa.getDevice(0);
   if (brightness == 255) {
-    motorOn();
-    Serial.println("Motor Turned ON");
-    d1->setPercent(100);
-    sendMessage("Motor Started by Alexa on " + curDateTime);
+    if (MotorStatus == 0) {
+      motorOn();
+      Serial.println("Motor Turned ON");
+      d1->setPercent(100);
+      sendMessage("Motor Started by Alexa on " + curDateTime);
+    }
   } else {
-    motorOff();
-    Serial.println("Motor Turned OFF");
-    d1->setPercent(0);
-    sendMessage("Motor Stopped by Alexa on " + curDateTime);
+    if (MotorStatus == 1) {
+      motorOff();
+      Serial.println("Motor Turned OFF");
+      d1->setPercent(0);
+      sendMessage("Motor Stopped by Alexa on " + curDateTime);
+    }
   }
 }
 
@@ -793,11 +802,15 @@ BLYNK_WRITE(V0) {
   Serial.print("Blynk Value : ");
   Serial.println(pinValue);
   if (pinValue == 1) {
-    Serial.println("Blynk Motor On");
-    motorOn();
+    if (MotorStatus == 0) {
+      Serial.println("Blynk Motor On");
+      motorOn();
+    }
   } else {
-    Serial.println("Blynk Motor Off");
-    motorOff();
+    if (MotorStatus == 1) {
+      Serial.println("Blynk Motor Off");
+      motorOff();
+    }
   }
 }
 
@@ -805,10 +818,8 @@ void setup() {
   Serial.begin(115200);      // Starts the serial communication
   pinMode(trigPin, OUTPUT);  // Sets the trigPin as an Output
   pinMode(echoPin, INPUT);   // Sets the echoPin as an Input
-
   // Onboard LED Setup
   pinMode(LED, OUTPUT);  //Onbard LED
-
   //Wifi Manager Setup
   WiFiManager wifiManager;
   //clear the value in EEPROM for already save SSID and Password
@@ -830,7 +841,7 @@ void setup() {
       server.send(404, "text/plain", "Not found");
     }
   });
-  // WebService Enabling. Disable due to ESPALEXA is running 
+  // WebService Enabling. Disable due to ESPALEXA is running
   //server.onNotFound(handleNotFound);
   //server.begin();
   Serial.println("HTTP server started");
@@ -854,12 +865,12 @@ void setup() {
 
   if (!DS1307_RTC.begin()) {
     Serial.println("Couldn't find RTC");
-    while (1);
+    while (1)
+      ;
   }
 
   // Comment this code. Run this 1st time only for set the time to RTC timmer
   //DS1307_RTC.adjust(DateTime(F(__DATE__), F(__TIME__)));
-
 }
 
 
@@ -868,10 +879,8 @@ void loop() {
     digitalWrite(LED, LOW);  // LED ON
     while (WiFi.status() == WL_CONNECTED) {
       runPeriodicFunc();
-
       //WebServer haddle request. Disable due to ESPALEXA is running
       //server.handleClient();
-
       //LED Function
       digitalWrite(LED, HIGH);
       delay(500);
