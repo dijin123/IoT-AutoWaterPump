@@ -481,6 +481,41 @@ void motorOff() {
   }
   //}
 }
+
+int motorCheckStatus() {
+  Serial.println("Moter Status event");
+  WiFiClientSecure client;
+  client.setInsecure();
+  HTTPClient http;
+  String serverPath = "https://backend.tinxy.in/v2/devices/" + tinxyKey + "/state?deviceNumber=1";
+  // Your Domain name with URL path or IP address with path
+  //client.connect("backend.tinxy.in", 443);
+  http.begin(client, serverPath);
+  String token = "Bearer " + tinxyAPIKey;
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("Authorization", token);
+  int httpResponseCode = http.GET();
+  Serial.print("HTTP Response code: ");
+  Serial.println(httpResponseCode);
+  String payload = "{}";
+  const char* state;
+  int status;
+  if (httpResponseCode == 200) {
+    DynamicJsonDocument doc(1024);
+    deserializeJson(doc, http.getString());
+    state = doc["state"];
+    status = doc["status"];
+    Serial.println("State and Status : " + String(state) + " : " + String(status));
+  }
+  // Free resources
+  http.end();
+  String mStatus = String(state);
+  if (mStatus == "OFF") {
+    return 0;
+  } else {
+    return 1;
+  }
+}
 // This function sends Arduino's uptime every second to Virtual Pin 2.
 void myTimerEvent() {
   // You can send any value at any time.
@@ -643,16 +678,16 @@ void measure_Volume() {
   // Calculate the distance
   float sensorValueCM = duration * SOUND_VELOCITY / 2;
   Serial.println("*****************************");
-  Serial.print("Sensor Value (CM): ");
+  /*Serial.print("Sensor Value (CM): ");
   Serial.println(sensorValueCM);
   Serial.print("distanceCm (CM): ");
-  Serial.println(distanceCm);
+  Serial.println(distanceCm);*/
   if (distanceCm == 0.00) {
     distanceCm = sensorValueCM;
   }
   float differance = sensorValueCM - distanceCm;
-  Serial.print("differance (CM): ");
-  Serial.println(differance);
+  /*Serial.print("differance (CM): ");
+  Serial.println(differance);*/
   if (differance < 5.00) {
     if (differance > -5.00) {
       float currentWaterLevel = sensorValueCM - overFlow;
@@ -745,14 +780,14 @@ void Timer() {
   int curmint = currentTime.minute();
   int cursec = currentTime.second();
   curDateTime = currentTime.timestamp();
-  Serial.print("Timer Time - ");
+  /*Serial.print("Timer Time - ");
   Serial.print(timerhour);
   Serial.print(':');
   Serial.println(timermint);
   Serial.print("Current Time - ");
   Serial.print(curhour);
   Serial.print(':');
-  Serial.println(curmint);
+  Serial.println(curmint);*/
   if (timerSatus == 1) {
     if (timerhour == curhour) {
       if (timermint == curmint) {
@@ -868,6 +903,9 @@ void setup() {
     while (1)
       ;
   }
+
+  //check the moter current status from API
+  MotorStatus = motorCheckStatus();
 
   // Comment this code. Run this 1st time only for set the time to RTC timmer
   //DS1307_RTC.adjust(DateTime(F(__DATE__), F(__TIME__)));
