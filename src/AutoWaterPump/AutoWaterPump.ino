@@ -6,29 +6,29 @@
 #include <ESP8266WebServer.h>
 #include <WiFiManager.h>
 #include <EEPROM.h>
-#include <RTClib.h>
+#include "RTClib.h"
 #include <Espalexa.h>
 #include <UrlEncode.h>
 #include <string>
-
 
 const int trigPin = 12;
 const int echoPin = 14;
 long duration;
 float distanceCm;
 float distanceInch;
+//previous water level
+int previousWaterlevel = 0;
+unsigned long lastMillis;
 
 //call back function
 void firstLightChanged(uint8_t brightness);
 // device names
 String Device_1_Name = "Water Pump";
 
-
-
 //define sound velocity in cm/uS
 #define SOUND_VELOCITY 0.034
 #define CM_TO_INCH 0.393701
-#define LED D0  //Define LED pin D0
+//#define LED D0  //Define LED pin D0
 
 /* Fill-in information from Blynk Device Info here */
 #define BLYNK_TEMPLATE_ID "TMPLLlamQsSx"
@@ -317,11 +317,11 @@ const char index_html[] PROGMEM = R"=====(
       <td>
         <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
           <input class="mdl-textfield__input" type="text" name="txtTinxyKey">
-          <label class="mdl-textfield__label" for="txtTinxyKey"> Tinxy Device Key : </label>
+          <label class="mdl-textfield__label" for="txtTinxyKey"> URL of Motor Smart Switch : </label>
         </div>
       </td>
       <td>
-        <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+        <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label" hidden>
           <input class="mdl-textfield__input" type="text" name="txtTinxyAPIKey">
           <label class="mdl-textfield__label" for="txtTinxyAPIKey"> Tinxy API Key : </label>
         </div>
@@ -331,13 +331,13 @@ const char index_html[] PROGMEM = R"=====(
       <td>
         <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
           <input class="mdl-textfield__input" type="text" name="txtMobileNumber">
-          <label class="mdl-textfield__label" for="txtMobileNumber"> WhatsApp Number : </label>
+          <label class="mdl-textfield__label" for="txtMobileNumber"> Push Notification Code : </label>
         </div>
       </td>
       <td>
         <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
           <input class="mdl-textfield__input" type="text" name="txtWhatsAPIKey">
-          <label class="mdl-textfield__label" for="txtWhatsAPIKey"> WhatsApp API Key : </label>
+          <label class="mdl-textfield__label" for="txtWhatsAPIKey"> URL of Auto Water Pump : </label>
         </div>
       </td>
     </tr>
@@ -380,8 +380,8 @@ String dataToSend = "";
 int waterLevelDownCount = 0, waterLevelUpCount = 0;
 ESP8266WebServer server(80);
 DateTime currentTime;
-RTC_DS1307 DS1307_RTC;
-char Week_days[7][12] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
+RTC_DS1307 rtc;
+char daysOfTheWeek[7][12] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
 int timerSatus;
 String timeValue;
 Espalexa espalexa;
@@ -389,6 +389,28 @@ String phoneNumber = "0";
 String whatsAppApiKey = "0";
 String curDateTime;
 int timerRetry = 0;
+int APIStatus;
+
+int currMints = 0;
+int watelevelcheck = 0;
+int motorOnWaterLevel = 0;
+String motorOnTime = "0:0";
+
+String getValue(String data, char separator, int index) {
+  int found = 0;
+  int strIndex[] = { 0, -1 };
+  int maxIndex = data.length() - 1;
+
+  for (int i = 0; i <= maxIndex && found <= index; i++) {
+    if (data.charAt(i) == separator || i == maxIndex) {
+      found++;
+      strIndex[0] = strIndex[1] + 1;
+      strIndex[1] = (i == maxIndex) ? i + 1 : i;
+    }
+  }
+  return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
+}
+
 
 void setCrossOrigin() {
   server.sendHeader(F("Access-Control-Allow-Origin"), F("*"));
@@ -401,19 +423,21 @@ void sendMessage(String message) {
   if (phoneNumber.length() >= 10) {
     if (whatsAppApiKey.length() >= 7) {
       // Data to send with HTTP POST
-      String url = "http://api.callmebot.com/whatsapp.php?phone=" + String(phoneNumber) + "&apikey=" + String(whatsAppApiKey) + "&text=" + urlEncode(message);
-      //Serial.println(url);
+      //String url = "http://api.callmebot.com/whatsapp.php?phone=" + String(phoneNumber) + "&apikey=" + String(whatsAppApiKey) + "&text=" + urlEncode(message);
+      String url = "http://xdroid.net/api/message?k=" + String(phoneNumber) + "&t=" + urlEncode("Water Pump Notification") + "&c=" + urlEncode(message) + "&u=" + String(whatsAppApiKey);
+      Serial.println(url);
       WiFiClient client;
+      //client.setInsecure();
       HTTPClient http;
       http.begin(client, url);
-
       // Specify content-type header
-      http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-
+      http.addHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8");
+      http.addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/113.0");
+      http.addHeader("Host", "xdroid.net");
       // Send HTTP POST request
-      int httpResponseCode = http.POST(url);
+      int httpResponseCode = http.GET();
       if (httpResponseCode == 200) {
-        Serial.print("WhatsApp Message sent successfully");
+        Serial.println("WhatsApp Message sent successfully");
       } else {
         Serial.println("Error sending the WhatsApp message");
         Serial.print("HTTP response code: ");
@@ -426,30 +450,99 @@ void sendMessage(String message) {
   }
 }
 
+void motorCheckStatus() {
+  Serial.println("Motor Status event");
+  WiFiClient client;
+  //client.setInsecure();
+  HTTPClient http;
+  http.setTimeout(15000);
+  String serverPath = tinxyKey + "/status";
+  http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+  // Your Domain name with URL path or IP address with path
+  //client.connect("backend.tinxy.in", 443);
+  http.begin(client, serverPath);
+  //String token = "Bearer " + tinxyAPIKey;
+  //http.addHeader("Content-Type", "application/json");
+  //http.addHeader("Authorization", token);
+  int httpResponseCode = http.GET();
+  Serial.print("HTTP Response code: ");
+  Serial.println(httpResponseCode);
+  int tstatus;
+  if (httpResponseCode == 200) {
+    DynamicJsonDocument doc(1024);
+    deserializeJson(doc, http.getString());
+    tstatus = doc["status"];
+    Serial.println("API Motor Status : " + String(tstatus));
+  } else if (httpResponseCode == -11) {
+    delay(3000);
+    int httpResponseCode = http.GET();
+    Serial.print("HTTP Response code: ");
+    Serial.println(httpResponseCode);
+    if (httpResponseCode == 200) {
+      DynamicJsonDocument doc(1024);
+      deserializeJson(doc, http.getString());
+      tstatus = doc["status"];
+      Serial.println("API Motor Status : " + String(tstatus));
+    } else if (httpResponseCode == -11) {
+      delay(3000);
+      int httpResponseCode = http.GET();
+      Serial.print("HTTP Response code: ");
+      Serial.println(httpResponseCode);
+      if (httpResponseCode == 200) {
+        DynamicJsonDocument doc(1024);
+        deserializeJson(doc, http.getString());
+        tstatus = doc["status"];
+        Serial.println("API Motor Status : " + String(tstatus));
+      }
+    }
+  }
+  // Free resources
+  http.end();
+  if (tstatus == 1) {
+    APIStatus = 0;
+  } else {
+    APIStatus = 1;
+  }
+}
+
 void motorOn() {
   //If we used the Tinxy Relay Module
   //if (tinxyKey != NULL && tinxyAPIKey != NULL) {
   Serial.println("MotorON event");
   if (MotorStatus == 0) {
     if (liters < waterLevelUpperThreshold) {
-      WiFiClientSecure client;
-      client.setInsecure();
+      WiFiClient client;
+      //client.setInsecure();
       HTTPClient http;
-      String serverPath = "https://backend.tinxy.in/v2/devices/" + tinxyKey + "/toggle";
-      // Your Domain name with URL path or IP address with path
-      //client.connect("backend.tinxy.in", 443);
+      http.setTimeout(15000);
+      String serverPath = tinxyKey + "/toggle?On=1";
+      http.addHeader("Content-Type", "application/x-www-form-urlencoded");
       http.begin(client, serverPath);
-      String token = "Bearer " + tinxyAPIKey;
-      http.addHeader("Content-Type", "application/json");
-      http.addHeader("Authorization", token);
-      int httpResponseCode = http.POST("{\"request\":{\"state\":1},\"deviceNumber\":1}");
+      int httpResponseCode = http.GET();
+      Serial.println("URL : " + serverPath);
       Serial.print("HTTP Response code: ");
       Serial.println(httpResponseCode);
-      if (httpResponseCode == 200) {
-        MotorStatus = 1;
-      }
+      // Your Domain name with URL path or IP address with path
+      //client.connect("backend.tinxy.in", 443);
+      //String token = "Bearer " + tinxyAPIKey;
+      //http.addHeader("Content-Type", "application/json");
+      //http.addHeader("Authorization", token);
+      //int httpResponseCode = http.POST("{\"request\":{\"state\":1},\"deviceNumber\":1}");
       // Free resources
+      //client.stop();
       http.end();
+      if (httpResponseCode == 200 || httpResponseCode == -11) {
+        delay(2000);
+        motorCheckStatus();
+        Serial.println("Motor Current Status : " + String(APIStatus));
+        MotorStatus = APIStatus;
+        if (MotorStatus == 1) {
+          int curhour = currentTime.hour();
+          int curmint = currentTime.minute();
+          motorOnTime = String(curhour) + ":" + String(curmint);
+          motorOnWaterLevel = liters;
+        }
+      }
     }
   }
   //}
@@ -460,62 +553,55 @@ void motorOff() {
   //if (tinxyKey != NULL && tinxyAPIKey != NULL) {
   if (MotorStatus == 1) {
     Serial.println("MotorOFF event");
-    WiFiClientSecure client;
-    client.setInsecure();
+    WiFiClient client;
+    //client.setInsecure();
     HTTPClient http;
-    String serverPath = "https://backend.tinxy.in/v2/devices/" + tinxyKey + "/toggle";
-    // Your Domain name with URL path or IP address with path
-    //client.connect("backend.tinxy.in", 443);
+    http.setTimeout(15000);
+    String serverPath = tinxyKey + "/toggle?On=0";
+    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
     http.begin(client, serverPath);
-    String token = "Bearer " + tinxyAPIKey;
-    http.addHeader("Content-Type", "application/json");
-    http.addHeader("Authorization", token);
-    int httpResponseCode = http.POST("{\"request\":{\"state\":0},\"deviceNumber\":1}");
+    int httpResponseCode = http.GET();
+    Serial.println("URL" + serverPath);
     Serial.print("HTTP Response code: ");
     Serial.println(httpResponseCode);
-    if (httpResponseCode == 200) {
-      MotorStatus = 0;
-    }
+    // Your Domain name with URL path or IP address with path
+    //client.connect("backend.tinxy.in", 443);
+    //String token = "Bearer " + tinxyAPIKey;
+    //http.addHeader("Content-Type", "application/json");
+    //http.addHeader("Authorization", token);
+    //int httpResponseCode = http.POST("{\"request\":{\"state\":0},\"deviceNumber\":1}");
     // Free resources
+    //client.stop();
     http.end();
+    if (httpResponseCode == 200 || httpResponseCode == -11) {
+      delay(2000);
+      motorCheckStatus();
+      Serial.println("Motor Current Status : " + String(APIStatus));
+      MotorStatus = APIStatus;
+    }
   }
   //}
 }
 
-int motorCheckStatus() {
-  Serial.println("Moter Status event");
-  WiFiClientSecure client;
-  client.setInsecure();
-  HTTPClient http;
-  String serverPath = "https://backend.tinxy.in/v2/devices/" + tinxyKey + "/state?deviceNumber=1";
-  // Your Domain name with URL path or IP address with path
-  //client.connect("backend.tinxy.in", 443);
-  http.begin(client, serverPath);
-  String token = "Bearer " + tinxyAPIKey;
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("Authorization", token);
-  int httpResponseCode = http.GET();
-  Serial.print("HTTP Response code: ");
-  Serial.println(httpResponseCode);
-  String payload = "{}";
-  const char* state;
-  int status;
-  if (httpResponseCode == 200) {
-    DynamicJsonDocument doc(1024);
-    deserializeJson(doc, http.getString());
-    state = doc["state"];
-    status = doc["status"];
-    Serial.println("State and Status : " + String(state) + " : " + String(status));
-  }
-  // Free resources
-  http.end();
-  String mStatus = String(state);
-  if (mStatus == "OFF") {
-    return 0;
-  } else {
-    return 1;
+
+void dryRunCheck() {
+  if (MotorStatus == 1) {
+    int curhour = currentTime.hour();
+    int curmint = currentTime.minute();
+    String H = getValue(motorOnTime, ':', 0);
+    String M = getValue(motorOnTime, ':', 1);
+    int Hur = H.toInt();
+    int Mts = M.toInt();
+    //Serial.println("Current Mints : " + String(curmint) + " <> Motor Start Mints : " + String(Mts));
+    if (curmint >= (Mts + 3)) {
+      if (motorOnWaterLevel == liters) {
+        motorOff();
+      }
+    }
   }
 }
+
+
 // This function sends Arduino's uptime every second to Virtual Pin 2.
 void myTimerEvent() {
   // You can send any value at any time.
@@ -524,6 +610,7 @@ void myTimerEvent() {
   //Blynk Swich Status
   Blynk.virtualWrite(V0, MotorStatus);
   //Blynk.virtualWrite(V2, millis() / 1000);
+  //check the moter current status from API
 }
 
 int writeStringToEEPROM(int addrOffset, const String &strToWrite) {
@@ -755,23 +842,9 @@ void runPeriodicFunc() {
   }
 }
 
-String getValue(String data, char separator, int index) {
-  int found = 0;
-  int strIndex[] = { 0, -1 };
-  int maxIndex = data.length() - 1;
 
-  for (int i = 0; i <= maxIndex && found <= index; i++) {
-    if (data.charAt(i) == separator || i == maxIndex) {
-      found++;
-      strIndex[0] = strIndex[1] + 1;
-      strIndex[1] = (i == maxIndex) ? i + 1 : i;
-    }
-  }
-  return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
-}
 
 void Timer() {
-  currentTime = DS1307_RTC.now();
   String H = getValue(timeValue, ':', 0);
   String M = getValue(timeValue, ':', 1);
   int timerhour = H.toInt();
@@ -779,15 +852,15 @@ void Timer() {
   int curhour = currentTime.hour();
   int curmint = currentTime.minute();
   int cursec = currentTime.second();
-  curDateTime = currentTime.timestamp();
+  curDateTime = String(currentTime.day()) + "/" + String(currentTime.month()) + "/" + String(currentTime.year()) + "  " + String(curhour) + ":" + String(curmint) + ":" + String(cursec);
   /*Serial.print("Timer Time - ");
   Serial.print(timerhour);
   Serial.print(':');
   Serial.println(timermint);
   Serial.print("Current Time - ");
-  Serial.print(curhour);
+  Serial.print(String(curhour));
   Serial.print(':');
-  Serial.println(curmint);*/
+  Serial.println(String(curmint));*/
   if (timerSatus == 1) {
     if (timerhour == curhour) {
       if (timermint == curmint) {
@@ -854,7 +927,7 @@ void setup() {
   pinMode(trigPin, OUTPUT);  // Sets the trigPin as an Output
   pinMode(echoPin, INPUT);   // Sets the echoPin as an Input
   // Onboard LED Setup
-  pinMode(LED, OUTPUT);  //Onbard LED
+  pinMode(LED_BUILTIN, OUTPUT);  //Onbard LED
   //Wifi Manager Setup
   WiFiManager wifiManager;
   //clear the value in EEPROM for already save SSID and Password
@@ -893,47 +966,55 @@ void setup() {
   //EEPROM Setup
   EEPROM.begin(512);
   int vcheck = checkValueinEEPROM();
-  if (vcheck != 1)
+  if (vcheck != 1) {
     saveEEPROM();
-  else
+  } else {
     readEEPROM();
-
-  if (!DS1307_RTC.begin()) {
-    Serial.println("Couldn't find RTC");
-    while (1)
-      ;
   }
 
   //check the moter current status from API
-  MotorStatus = motorCheckStatus();
+  motorCheckStatus();
+  MotorStatus = APIStatus;
 
-  // Comment this code. Run this 1st time only for set the time to RTC timmer
-  //DS1307_RTC.adjust(DateTime(F(__DATE__), F(__TIME__)));
+  if (!rtc.begin()) {
+    Serial.println("Couldn't find RTC");
+  }
+  //comment the code after 1st run
+  //rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
 }
 
 
 void loop() {
   if (WiFi.status() == WL_CONNECTED) {
-    digitalWrite(LED, LOW);  // LED ON
+    digitalWrite(LED_BUILTIN, LOW);  // LED ON
     while (WiFi.status() == WL_CONNECTED) {
       runPeriodicFunc();
       //WebServer haddle request. Disable due to ESPALEXA is running
       //server.handleClient();
       //LED Function
-      digitalWrite(LED, HIGH);
-      delay(500);
-      digitalWrite(LED, LOW);
-      delay(200);
+      digitalWrite(LED_BUILTIN, LOW);  // LED ON
       //Blynk Sync
       Blynk.run();
       timer.run();
       // Timmer Module Tigger Event
+      currentTime = rtc.now();
       Timer();
+      //Check Motor Dry Run
+      dryRunCheck();
       //loop the Alexa
       espalexa.loop();
-      delay(1);
+      // Tigger every 1 mintues
+      if (millis() - lastMillis >= 1 * 60 * 1000UL) {
+        lastMillis = millis();  //get ready for the next iteration
+        Serial.println("Event Trigger Every 1 Mints");
+        motorCheckStatus();
+        MotorStatus = APIStatus;
+      }
     }
   } else {
-    digitalWrite(LED, HIGH);  // LED OFF
+    digitalWrite(LED_BUILTIN, HIGH);  // LED OFF
+    delay(500);
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(200);
   }
 }
